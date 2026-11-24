@@ -8,7 +8,8 @@ Connect any upstream n8n node, load your database table schema and column types 
 
 ## Screenshots & Video Demo
 
-- **End-to-end Playwright video walkthrough:** [screenshots/fox-schema-match-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-demo.webm)
+- **End-to-end n8n Creator walkthrough video:** [screenshots/fox-schema-match-creator-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-creator-demo.webm)
+- **Short execution video:** [screenshots/fox-schema-match-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-demo.webm)
 - **Sample workflow:** [examples/sample-workflow-pipe-match.json](examples/sample-workflow-pipe-match.json)
 
 ### Visual Table Mapper (Mapped Database Insert / Update / Upsert)
