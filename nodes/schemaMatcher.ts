@@ -1,3 +1,4 @@
+import { applyColumnValidationRule, ColumnRuleError } from './columnRules';
 import type { FoxTableSchema } from './foxSchema';
 import {
 	assertIdent,
@@ -8,9 +9,9 @@ import {
 import type { SupportedDialect } from './supportedDialects';
 import type {
 	ColumnTransform,
+	ColumnValidationRule,
 	ManualColumnMapping,
 	MappedRowResult,
-	MappingMode,
 	MatchRule,
 	ParsedSourceRow,
 	RowFailureRecord,
@@ -212,7 +213,6 @@ export function coerceValueForColumn(
 				return value;
 			}
 		}
-		// SQLite (better-sqlite3) and Oracle/SQL Server bit columns bind 1/0 cleanly.
 		if (
 			opts.dialect === 'sqlite' ||
 			opts.dialect === 'oracle' ||
@@ -270,7 +270,6 @@ export function coerceValueForColumn(
 		return String(value);
 	}
 
-	// String / fallback: serialize objects cleanly so drivers don't reject plain objects
 	if (typeof value === 'object') {
 		if (value instanceof Date) return value.toISOString();
 		if (Buffer.isBuffer(value)) return value;
@@ -287,11 +286,11 @@ export interface MatchEngineOptions {
 	table: string;
 	dialect: SupportedDialect;
 	tableMeta?: TargetTableMeta;
-	mappingMode: MappingMode;
+	mappingMode: 'auto' | 'manual';
 	matchRule: MatchRule;
 	unmatchedSourceBehavior: UnmatchedSourceBehavior;
 	manualMappings: ManualColumnMapping[];
-	positionalColumns: string[];
+	columnRules: ColumnValidationRule[];
 	matchKeyColumns: string[];
 	emptyStringAsNull: boolean;
 	strictTypeValidation: boolean;
@@ -320,6 +319,24 @@ export function resolveEffectiveMatchKeys(opts: {
 	return [];
 }
 
+function buildRulesMap(
+	rules: ColumnValidationRule[],
+	tableMeta: TargetTableMeta | undefined,
+	matchRule: MatchRule,
+): Map<string, ColumnValidationRule[]> {
+	const map = new Map<string, ColumnValidationRule[]>();
+	for (const r of rules) {
+		const rawCol = String(r.targetColumn ?? '').trim();
+		if (!rawCol) continue;
+		const resolved = resolveColumnInMeta(tableMeta, rawCol, matchRule);
+		const key = (resolved ? resolved.name : rawCol).toLowerCase();
+		const list = map.get(key) ?? [];
+		list.push(r);
+		map.set(key, list);
+	}
+	return map;
+}
+
 export function matchSourceRow(
 	row: ParsedSourceRow,
 	opts: MatchEngineOptions,
@@ -327,19 +344,23 @@ export function matchSourceRow(
 	const mappedRow: Record<string, unknown> = {};
 	const matchedColumns: string[] = [];
 	const unmatchedFields: string[] = [];
+	const rulesMap = buildRulesMap(opts.columnRules, opts.tableMeta, opts.matchRule);
 
 	const fail = (
 		errorCode: RowFailureRecord['errorCode'],
 		error: string,
+		column?: string,
+		stage: RowFailureRecord['stage'] = 'schema_match',
 	): RowFailureRecord => ({
 		rowIndex: row.rowIndex,
 		itemIndex: row.itemIndex,
-		stage: 'schema_match',
+		stage,
 		errorCode,
 		error,
 		operation: opts.operation,
 		table: opts.table,
 		dialect: opts.dialect,
+		...(column ? { column } : {}),
 		sourceRow: row.data,
 		mappedRow: Object.keys(mappedRow).length > 0 ? { ...mappedRow } : undefined,
 	});
@@ -350,8 +371,20 @@ export function matchSourceRow(
 			throw new Error(`Target column "${targetColName}" does not exist in table "${opts.table}"`);
 		}
 		const finalName = colMeta ? colMeta.name : assertIdent(targetColName, 'target column');
-		const transformed = applyColumnTransform(rawVal, transform);
-		const coerced = coerceValueForColumn(transformed, colMeta, {
+		let workingVal = applyColumnTransform(rawVal, transform);
+
+		// Run any per-column validation, regex, and date/time conversion rules
+		const colRules = rulesMap.get(finalName.toLowerCase()) ?? [];
+		for (const rule of colRules) {
+			workingVal = applyColumnValidationRule(
+				finalName,
+				workingVal,
+				rule,
+				opts.emptyStringAsNull,
+			);
+		}
+
+		const coerced = coerceValueForColumn(workingVal, colMeta, {
 			dialect: opts.dialect,
 			emptyStringAsNull: opts.emptyStringAsNull,
 			strictTypeValidation: opts.strictTypeValidation,
@@ -400,53 +433,8 @@ export function matchSourceRow(
 
 				setTargetValue(targetCol, val, mapping.transform);
 			}
-		} else if (opts.mappingMode === 'positional') {
-			const values = row.positionalValues ?? Object.values(row.data);
-			const targetCols =
-				opts.positionalColumns.length > 0
-					? opts.positionalColumns
-					: (opts.tableMeta?.columns ?? [])
-							.filter((c) => opts.includeIdentityOnInsert || !c.identity)
-							.map((c) => c.name);
-
-			if (targetCols.length === 0) {
-				return fail(
-					'SCHEMA_MISMATCH',
-					'Positional mapping requires Positional Target Columns or an introspected table schema.',
-				);
-			}
-
-			for (let idx = 0; idx < targetCols.length; idx++) {
-				if (idx >= values.length) break;
-				setTargetValue(targetCols[idx], values[idx]);
-			}
 		} else {
-			// Auto-match mode + optional manual overrides
-			const overriddenSources = new Set<string>();
-			for (const mapping of opts.manualMappings) {
-				const targetCol = String(mapping.targetColumn ?? '').trim();
-				const srcPath = String(mapping.sourceField ?? '').trim();
-				if (!targetCol) continue;
-
-				if (srcPath) overriddenSources.add(srcPath);
-				let val = srcPath ? resolveDotBracketPath(row.data, srcPath) : undefined;
-				const isEmpty =
-					val === undefined ||
-					val === null ||
-					(typeof val === 'string' && val.trim() === '');
-
-				if (isEmpty) {
-					if (mapping.skipIfEmpty) continue;
-					if (mapping.defaultValue !== undefined && mapping.defaultValue !== '') {
-						val = mapping.defaultValue;
-					}
-				}
-				setTargetValue(targetCol, val, mapping.transform);
-			}
-
 			for (const [srcKey, srcVal] of Object.entries(row.data)) {
-				if (overriddenSources.has(srcKey)) continue;
-
 				if (opts.tableMeta) {
 					const matchedCol = resolveColumnInMeta(opts.tableMeta, srcKey, opts.matchRule);
 					if (!matchedCol) {
@@ -460,7 +448,6 @@ export function matchSourceRow(
 						if (opts.unmatchedSourceBehavior === 'ignore') {
 							continue;
 						}
-						// 'include'
 						setTargetValue(srcKey, srcVal);
 						continue;
 					}
@@ -473,17 +460,32 @@ export function matchSourceRow(
 						continue;
 					}
 
-					// Don't overwrite an explicit manual override for the same target column
 					if (!(matchedCol.name in mappedRow)) {
 						setTargetValue(matchedCol.name, srcVal);
 					}
 				} else {
-					// Schemaless fallback
 					setTargetValue(srcKey, srcVal);
+				}
+			}
+
+			// Evaluate required/default Column Rules for columns omitted from the input object
+			for (const [lowerCol, colRules] of rulesMap.entries()) {
+				const alreadyMapped = matchedColumns.some((c) => c.toLowerCase() === lowerCol);
+				if (alreadyMapped) continue;
+
+				const hasRequiredOrDefault = colRules.some(
+					(r) => r.required || (r.defaultValue !== undefined && r.defaultValue !== ''),
+				);
+				if (hasRequiredOrDefault) {
+					const colMeta = opts.tableMeta?.byLower.get(lowerCol);
+					setTargetValue(colMeta ? colMeta.name : colRules[0].targetColumn, undefined);
 				}
 			}
 		}
 	} catch (err: any) {
+		if (err instanceof ColumnRuleError) {
+			return fail(err.errorCode, err.message, err.column, 'validation');
+		}
 		const msg = err?.message || String(err);
 		const isTypeErr =
 			msg.includes('expected number') ||
@@ -501,7 +503,6 @@ export function matchSourceRow(
 		);
 	}
 
-	// Validate required NOT NULL columns on INSERT
 	if (opts.operation === 'insert' && opts.validateRequiredColumns && opts.tableMeta) {
 		for (const col of opts.tableMeta.columns) {
 			if (
@@ -515,13 +516,14 @@ export function matchSourceRow(
 					return fail(
 						'MISSING_REQUIRED_COLUMN',
 						`Required NOT NULL column "${col.name}" is missing or null for insert`,
+						col.name,
+						'validation',
 					);
 				}
 			}
 		}
 	}
 
-	// Validate match keys on UPDATE / UPSERT
 	if (opts.operation === 'update' || opts.operation === 'upsert') {
 		if (opts.matchKeyColumns.length === 0) {
 			return fail(
@@ -535,6 +537,8 @@ export function matchSourceRow(
 				return fail(
 					'MISSING_MATCH_KEY',
 					`Match key column "${keyCol}" is missing or null in mapped row`,
+					keyCol,
+					'validation',
 				);
 			}
 		}

@@ -8,8 +8,6 @@ import {
 	type INodeExecutionData,
 	type INodeOutputConfiguration,
 	type INodeParameters,
-	type INodeProperties,
-	type INodePropertyOptions,
 	type INodeType,
 	type INodeTypeDescription,
 } from 'n8n-workflow';
@@ -37,187 +35,6 @@ export function configuredOutputs(
 	return [{ type: 'main', displayName: 'Main' }];
 }
 
-const DIALECT_OPTIONS: INodePropertyOptions[] = [
-	{ name: 'Amazon Redshift', value: 'redshift' },
-	{ name: 'Azure SQL', value: 'azuresql' },
-	{ name: 'ClickHouse', value: 'clickhouse' },
-	{ name: 'CockroachDB', value: 'cockroachdb' },
-	{ name: 'DuckDB', value: 'duckdb' },
-	{ name: 'MariaDB', value: 'mariadb' },
-	{ name: 'MySQL', value: 'mysql' },
-	{ name: 'Oracle', value: 'oracle' },
-	{ name: 'PostgreSQL', value: 'postgres' },
-	{ name: 'SQL Server', value: 'sqlserver' },
-	{ name: 'SQLite', value: 'sqlite' },
-	{ name: 'TiDB', value: 'tidb' },
-	{ name: 'YugabyteDB', value: 'yugabytedb' },
-];
-
-const NETWORK_DIALECTS = [
-	'postgres',
-	'cockroachdb',
-	'yugabytedb',
-	'redshift',
-	'mysql',
-	'mariadb',
-	'tidb',
-	'sqlserver',
-	'azuresql',
-	'oracle',
-	'clickhouse',
-];
-
-const FILE_DIALECTS = ['sqlite', 'duckdb'];
-
-const SOURCE_INLINE_CONNECTION_FIELDS: INodeProperties[] = [
-	{
-		displayName: 'Source Connection String (Optional)',
-		name: 'sourceInlineConnectionString',
-		type: 'string',
-		typeOptions: { password: true },
-		default: '',
-		placeholder: 'postgres://user:pass@host:5432/source_db',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-			},
-		},
-	},
-	{
-		displayName: 'Source Database / Service',
-		name: 'sourceInlineDatabase',
-		type: 'string',
-		default: '',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Database File Path',
-		name: 'sourceInlineDatabase',
-		type: 'string',
-		default: '',
-		placeholder: '/data/source.db',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: FILE_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Dialect',
-		name: 'sourceInlineDialect',
-		type: 'options',
-		options: DIALECT_OPTIONS,
-		default: 'postgres',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-			},
-		},
-	},
-	{
-		displayName: 'Source Host',
-		name: 'sourceInlineHost',
-		type: 'string',
-		default: 'localhost',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Password',
-		name: 'sourceInlinePassword',
-		type: 'string',
-		typeOptions: { password: true },
-		default: '',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Port',
-		name: 'sourceInlinePort',
-		type: 'number',
-		default: 5432,
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Reject Unauthorized SSL',
-		name: 'sourceInlineRejectUnauthorized',
-		type: 'boolean',
-		default: true,
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-				sourceInlineUseSsl: [true],
-			},
-		},
-	},
-	{
-		displayName: 'Source Schema',
-		name: 'sourceInlineSchema',
-		type: 'string',
-		default: '',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-			},
-		},
-	},
-	{
-		displayName: 'Source Use SSL',
-		name: 'sourceInlineUseSsl',
-		type: 'boolean',
-		default: false,
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-	{
-		displayName: 'Source Username',
-		name: 'sourceInlineUsername',
-		type: 'string',
-		default: '',
-		displayOptions: {
-			show: {
-				dataSource: ['rawQuery'],
-				rawQueryConnectionMode: ['inline'],
-				sourceInlineDialect: NETWORK_DIALECTS,
-			},
-		},
-	},
-];
-
 export class FoxSchemaMatch implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Fox Schema Match',
@@ -228,9 +45,9 @@ export class FoxSchemaMatch implements INodeType {
 		},
 		group: ['transform', 'output'],
 		version: 1,
-		subtitle: '={{$parameter["dataSource"] + " -> " + $parameter["operation"]}}',
+		subtitle: '={{$parameter["operation"] + " · " + ($parameter["tableId"]?.value || "table")}}',
 		description:
-			'Fox Schema Pipe Match: ingest Raw SQL Queries, JSON, CSV, or Delimited/Structured Text, match & coerce to target database table columns (Insert, Update, Upsert) across 13 SQL dialects with row/batch error handling',
+			'Load target table schema via FoxSchema, map input items manually or automatically with data type validation, regex rules, and date/time conversion, execute Insert / Update / Upsert across 13 SQL dialects, and route errors cleanly',
 		documentationUrl: 'https://foxschema.com',
 		defaults: {
 			name: 'Fox Schema Match',
@@ -243,15 +60,15 @@ export class FoxSchemaMatch implements INodeType {
 			},
 			alias: [
 				'foxschema',
-				'pipe',
 				'match',
 				'upsert',
 				'insert',
 				'update',
-				'csv',
-				'json',
+				'mapping',
+				'validation',
+				'regex',
+				'datetime',
 				'sql',
-				'etl',
 			],
 		},
 		usableAsTool: true,
@@ -267,14 +84,14 @@ export class FoxSchemaMatch implements INodeType {
 		properties: [
 			{
 				displayName:
-					'Powered by <a href="https://foxschema.com" target="_blank">FoxSchema (@foxschema/db + @foxschema/sql)</a> — Pipe Match data from Raw SQL, JSON, CSV, or Text into 13 SQL dialects.',
+					'Powered by <a href="https://foxschema.com" target="_blank">FoxSchema (@foxschema/db + @foxschema/sql)</a> — Schema-mapped Insert, Update &amp; Upsert across 13 SQL dialects with validation, regex, and date/time conversion.',
 				name: 'foxSchemaBacklink',
 				type: 'notice',
 				default: '',
 			},
 
 			// ----------------------------------
-			//         Target Operation
+			//         Operation & Table
 			// ----------------------------------
 			{
 				displayName: 'Operation',
@@ -292,14 +109,14 @@ export class FoxSchemaMatch implements INodeType {
 					{
 						name: 'Insert',
 						value: 'insert',
-						description: 'Insert matched rows into the target database table',
-						action: 'Insert matched rows into table',
+						description: 'Insert mapped rows into the target database table',
+						action: 'Insert mapped rows into table',
 					},
 					{
 						name: 'Update',
 						value: 'update',
 						description: 'Update existing rows in the target table by match key columns',
-						action: 'Update matched rows in table',
+						action: 'Update mapped rows in table',
 					},
 				],
 				default: 'upsert',
@@ -329,465 +146,11 @@ export class FoxSchemaMatch implements INodeType {
 						placeholder: 'users or public.users',
 					},
 				],
-				description: 'Target database table (discovered via FoxSchema catalog)',
+				description: 'Target database table whose schema and columns are loaded via FoxSchema',
 			},
 
 			// ----------------------------------
-			//         Data Source Input
-			// ----------------------------------
-			{
-				displayName: 'Data Source',
-				name: 'dataSource',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'CSV',
-						value: 'csv',
-						description: 'Parse CSV text or binary file into rows',
-					},
-					{
-						name: 'Execute Raw Query',
-						value: 'rawQuery',
-						description: 'Execute a raw SQL query against a source database and pipe its rows',
-					},
-					{
-						name: 'JSON',
-						value: 'json',
-						description: 'Read incoming n8n JSON items, JSON/NDJSON string, or JSON binary file',
-					},
-					{
-						name: 'Text (Pipe / Delimited / Structured)',
-						value: 'text',
-						description:
-							'Parse pipe-delimited (|), TSV, custom delimiter, key-value, regex, or fixed-width text',
-					},
-				],
-				default: 'json',
-				description: 'Input data source format to parse and match to target columns',
-			},
-
-			// --- Raw Query Source ---
-			{
-				displayName: 'Source DB Connection',
-				name: 'rawQueryConnectionMode',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['rawQuery'],
-					},
-				},
-				options: [
-					{
-						name: 'Inline Source Connection',
-						value: 'inline',
-						description: 'Specify source dialect, host, credentials, or file path directly on the node',
-					},
-					{
-						name: 'Same as Target Credential',
-						value: 'sameAsTarget',
-						description: 'Run the source SQL query against the same database as Target Table',
-					},
-				],
-				default: 'sameAsTarget',
-			},
-			...SOURCE_INLINE_CONNECTION_FIELDS,
-			{
-				displayName: 'Raw SQL Query',
-				name: 'rawSql',
-				type: 'string',
-				typeOptions: {
-					editor: 'sqlEditor',
-					sqlDialect: 'StandardSQL',
-					rows: 5,
-				},
-				default: 'SELECT * FROM staging_users',
-				placeholder: 'SELECT user_id, name, email FROM staging_users WHERE active = ?',
-				displayOptions: {
-					show: {
-						dataSource: ['rawQuery'],
-					},
-				},
-				description:
-					'SQL query returning rows to pipe into the target table (supports ? bind parameters)',
-			},
-			{
-				displayName: 'Query Bind Parameters',
-				name: 'rawQueryBindings',
-				type: 'fixedCollection',
-				typeOptions: {
-					multipleValues: true,
-					multipleValueButtonText: 'Add Parameter',
-				},
-				default: {},
-				displayOptions: {
-					show: {
-						dataSource: ['rawQuery'],
-					},
-				},
-				options: [
-					{
-						name: 'parameterValues',
-						displayName: 'Parameter',
-						values: [
-							{
-								displayName: 'Type',
-								name: 'type',
-								type: 'options',
-								default: 'string',
-								options: [
-									{ name: 'Boolean', value: 'boolean' },
-									{ name: 'Date', value: 'date' },
-									{ name: 'JSON', value: 'json' },
-									{ name: 'Null', value: 'null' },
-									{ name: 'Number', value: 'number' },
-									{ name: 'SQL Expression', value: 'sql' },
-									{ name: 'String', value: 'string' },
-								],
-							},
-							{
-								displayName: 'Value',
-								name: 'value',
-								type: 'string',
-								default: '',
-							},
-						],
-					},
-				],
-			},
-			{
-				displayName: 'Query Result Data Path',
-				name: 'rawQueryDataPath',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. [0].rows',
-				displayOptions: {
-					show: {
-						dataSource: ['rawQuery'],
-					},
-				},
-				description: 'Optional dot/bracket path to extract rows from the query result',
-			},
-			{
-				displayName: 'Query Timeout (Ms)',
-				name: 'rawQueryTimeoutMs',
-				type: 'number',
-				default: 15000,
-				displayOptions: {
-					show: {
-						dataSource: ['rawQuery'],
-					},
-				},
-			},
-
-			// --- JSON Source ---
-			{
-				displayName: 'JSON Source Mode',
-				name: 'jsonInputMode',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['json'],
-					},
-				},
-				options: [
-					{
-						name: 'Binary File (JSON / NDJSON)',
-						value: 'binary',
-					},
-					{
-						name: 'Incoming Workflow Items (JSON)',
-						value: 'incomingItems',
-					},
-					{
-						name: 'JSON / NDJSON String or Expression',
-						value: 'jsonString',
-					},
-				],
-				default: 'incomingItems',
-			},
-			{
-				displayName: 'JSON Payload',
-				name: 'jsonPayload',
-				type: 'string',
-				typeOptions: {
-					rows: 5,
-				},
-				default: '[]',
-				placeholder: '[{"user_id": 1, "name": "Alice", "email": "alice@example.com"}]',
-				displayOptions: {
-					show: {
-						dataSource: ['json'],
-						jsonInputMode: ['jsonString'],
-					},
-				},
-				description: 'JSON object, JSON array, or NDJSON text (supports n8n expressions)',
-			},
-			{
-				displayName: 'JSON Root Path (Optional)',
-				name: 'jsonRootPath',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. data.records',
-				displayOptions: {
-					show: {
-						dataSource: ['json'],
-					},
-				},
-				description: 'Optional dot/bracket path to extract an object or array from the JSON payload',
-			},
-
-			// --- CSV Source ---
-			{
-				displayName: 'CSV Input Mode',
-				name: 'csvInputMode',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['csv'],
-					},
-				},
-				options: [
-					{ name: 'Binary File', value: 'binary' },
-					{ name: 'Text or Expression', value: 'textContent' },
-				],
-				default: 'textContent',
-			},
-			{
-				displayName: 'CSV Content',
-				name: 'csvText',
-				type: 'string',
-				typeOptions: {
-					rows: 6,
-				},
-				default: '',
-				placeholder: 'user_id,name,email\n1,Alice,alice@example.com\n2,Bob,bob@example.com',
-				displayOptions: {
-					show: {
-						dataSource: ['csv'],
-						csvInputMode: ['textContent'],
-					},
-				},
-			},
-			{
-				displayName: 'CSV Delimiter',
-				name: 'csvDelimiter',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['csv'],
-					},
-				},
-				options: [
-					{ name: 'Comma (,)', value: ',' },
-					{ name: 'Custom', value: 'custom' },
-					{ name: 'Pipe (|)', value: '|' },
-					{ name: 'Semicolon (;)', value: ';' },
-					{ name: 'Tab', value: '\\t' },
-				],
-				default: ',',
-			},
-			{
-				displayName: 'Custom Delimiter',
-				name: 'csvCustomDelimiter',
-				type: 'string',
-				default: ',',
-				displayOptions: {
-					show: {
-						dataSource: ['csv'],
-						csvDelimiter: ['custom'],
-					},
-				},
-			},
-
-			// --- Text Source ---
-			{
-				displayName: 'Text Input Mode',
-				name: 'textInputMode',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-					},
-				},
-				options: [
-					{ name: 'Binary File', value: 'binary' },
-					{ name: 'Text or Expression', value: 'textContent' },
-				],
-				default: 'textContent',
-			},
-			{
-				displayName: 'Text Format',
-				name: 'textFormat',
-				type: 'options',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-					},
-				},
-				options: [
-					{
-						name: 'Custom Delimiter',
-						value: 'customDelimiter',
-						description: 'Split text using a custom delimiter string',
-					},
-					{
-						name: 'Fixed-Width Columns',
-						value: 'fixedWidth',
-						description: 'Extract fields by character ranges or widths (e.g. code:0-5,name:5-25)',
-					},
-					{
-						name: 'Key-Value Pairs',
-						value: 'keyValue',
-						description: 'Parse key=value lines (e.g. code=1 name="Alice" tier=pro)',
-					},
-					{
-						name: 'Pipe-Delimited (|)',
-						value: 'pipe',
-						description: 'Parse FoxSchema pipe-separated lines (code|name|email)',
-					},
-					{
-						name: 'Raw Lines',
-						value: 'lines',
-						description: 'Emit each line as { line, lineNumber }',
-					},
-					{
-						name: 'Regex Capture Groups',
-						value: 'regex',
-						description: 'Match each line with a regex using named or positional capture groups',
-					},
-					{
-						name: 'Tab-Delimited (TSV)',
-						value: 'tsv',
-						description: 'Parse tab-separated text lines',
-					},
-				],
-				default: 'pipe',
-			},
-			{
-				displayName: 'Text Content',
-				name: 'textContent',
-				type: 'string',
-				typeOptions: {
-					rows: 6,
-				},
-				default: '',
-				placeholder: 'user_id|name|email\n1|Alice|alice@example.com',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textInputMode: ['textContent'],
-					},
-				},
-			},
-			{
-				displayName: 'Custom Delimiter',
-				name: 'textCustomDelimiter',
-				type: 'string',
-				default: '|',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textFormat: ['customDelimiter'],
-					},
-				},
-			},
-			{
-				displayName: 'Pair Separator',
-				name: 'kvPairDelimiter',
-				type: 'string',
-				default: '\\s+',
-				placeholder: '\\s+ or ; or |',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textFormat: ['keyValue'],
-					},
-				},
-				description: 'Separator between key-value pairs (defaults to whitespace \\s+)',
-			},
-			{
-				displayName: 'Key-Value Separator',
-				name: 'kvSeparator',
-				type: 'string',
-				default: '=',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textFormat: ['keyValue'],
-					},
-				},
-			},
-			{
-				displayName: 'Regex Pattern',
-				name: 'regexPattern',
-				type: 'string',
-				default: '',
-				placeholder: '^(?&lt;user_id&gt;\\d+)\\s+(?&lt;name&gt;[^|]+)\\|(?&lt;email&gt;.+)$',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textFormat: ['regex'],
-					},
-				},
-				description: 'Regular expression with named groups (?&lt;col&gt;...) or numbered capture groups',
-			},
-			{
-				displayName: 'Fixed-Width Spec',
-				name: 'fixedWidthSpec',
-				type: 'string',
-				default: '',
-				placeholder: 'user_id:0-5,name:5-25,email:25-60 or user_id:5,name:20,email:35',
-				displayOptions: {
-					show: {
-						dataSource: ['text'],
-						textFormat: ['fixedWidth'],
-					},
-				},
-			},
-
-			// --- Shared Binary / Header Properties ---
-			{
-				displayName: 'Binary Property',
-				name: 'binaryPropertyName',
-				type: 'string',
-				default: 'data',
-				displayOptions: {
-					show: {
-						dataSource: ['json', 'csv', 'text'],
-					},
-				},
-				description: 'Name of the binary property containing the file when reading Binary input',
-			},
-			{
-				displayName: 'First Row Is Header',
-				name: 'hasHeader',
-				type: 'boolean',
-				default: true,
-				displayOptions: {
-					show: {
-						dataSource: ['csv', 'text'],
-					},
-				},
-				description: 'Whether the first row contains column headers',
-			},
-			{
-				displayName: 'Custom Column Headers',
-				name: 'customHeaders',
-				type: 'string',
-				default: '',
-				placeholder: 'user_id, name, email',
-				displayOptions: {
-					show: {
-						dataSource: ['csv', 'text'],
-					},
-				},
-				description:
-					'Comma-separated column names used when First Row Is Header is off (or for numbered regex groups)',
-			},
-
-			// ----------------------------------
-			//       Schema Match / Mapping
+			//         Column Mapping
 			// ----------------------------------
 			{
 				displayName: 'Column Mapping Mode',
@@ -796,29 +159,24 @@ export class FoxSchemaMatch implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
-						name: 'Auto-Match (Fox Schema Smart Match)',
+						name: 'Auto-Match (Smart Field Match)',
 						value: 'auto',
 						description:
-							'Automatically match source fields to target table columns with optional overrides/transforms',
+							'Automatically match incoming item fields to target table columns',
 					},
 					{
-						name: 'Manual Column Mapping',
+						name: 'Manual Field Mapping',
 						value: 'manual',
-						description: 'Explicitly map each source field or JSON path to a target table column',
-					},
-					{
-						name: 'Positional (Column Order)',
-						value: 'positional',
-						description: 'Map source values by column position to target columns in order',
+						description: 'Map specific source field paths to target columns with transforms',
 					},
 					{
 						name: 'Visual Table Mapper (Columns UI)',
 						value: 'resourceMapper',
 						description:
-							'Show every database table column automatically (Map Each Column Manually or Map Automatically)',
+							'Load every database column into the UI to map each column manually or automatically',
 					},
 				],
-				default: 'auto',
+				default: 'resourceMapper',
 			},
 			{
 				displayName: 'Columns',
@@ -970,36 +328,20 @@ export class FoxSchemaMatch implements INodeType {
 				default: 'ignore',
 			},
 			{
-				displayName: 'Positional Target Columns',
-				name: 'positionalColumns',
-				type: 'string',
-				default: '',
-				placeholder: 'user_id, name, email (leave empty to use table column order)',
-				displayOptions: {
-					show: {
-						mappingMode: ['positional'],
-					},
-				},
-				description:
-					'Comma-separated target columns in positional order; empty uses the table catalog order',
-			},
-			{
-				displayName: 'Column Mappings / Overrides',
+				displayName: 'Manual Field Mappings',
 				name: 'manualMappings',
 				type: 'fixedCollection',
 				typeOptions: {
 					multipleValues: true,
-					multipleValueButtonText: 'Add Column Mapping',
+					multipleValueButtonText: 'Add Field Mapping',
 				},
-				placeholder: 'Add Column Mapping',
+				placeholder: 'Add Field Mapping',
 				default: {},
 				displayOptions: {
 					show: {
-						mappingMode: ['auto', 'manual'],
+						mappingMode: ['manual'],
 					},
 				},
-				description:
-					'Define explicit source-to-target mappings, value transforms, and defaults (overrides Auto-Match when matched)',
 				options: [
 					{
 						name: 'mappingValues',
@@ -1010,14 +352,12 @@ export class FoxSchemaMatch implements INodeType {
 								name: 'defaultValue',
 								type: 'string',
 								default: '',
-								description: 'Fallback value when source field is missing or empty',
 							},
 							{
 								displayName: 'Skip If Empty',
 								name: 'skipIfEmpty',
 								type: 'boolean',
 								default: false,
-								description: 'Whether to omit this column when the source value is empty/null',
 							},
 							{
 								displayName: 'Source Field / Path',
@@ -1025,7 +365,7 @@ export class FoxSchemaMatch implements INodeType {
 								type: 'string',
 								default: '',
 								placeholder: 'user.email or col_name',
-								description: 'Source field name or dot/bracket path',
+								description: 'Incoming JSON field name or dot/bracket path',
 							},
 							{
 								displayName: 'Target Column Name or ID',
@@ -1072,7 +412,7 @@ export class FoxSchemaMatch implements INodeType {
 				displayOptions: {
 					show: {
 						operation: ['update', 'upsert'],
-						mappingMode: ['auto', 'manual', 'positional'],
+						mappingMode: ['auto', 'manual'],
 					},
 				},
 				description:
@@ -1087,11 +427,196 @@ export class FoxSchemaMatch implements INodeType {
 				displayOptions: {
 					show: {
 						operation: ['update', 'upsert'],
-						mappingMode: ['auto', 'manual', 'positional'],
+						mappingMode: ['auto', 'manual'],
 					},
 				},
 				description:
-					'Optional comma-separated key columns override (supports expressions; takes precedence over dropdown selection)',
+					'Optional comma-separated key columns override (takes precedence over dropdown selection)',
+			},
+
+			// ----------------------------------
+			//  Validation, Regex & Date/Time
+			// ----------------------------------
+			{
+				displayName: 'Column Rules (Data Type, Validation, Regex & Date/Time)',
+				name: 'columnRules',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+					multipleValueButtonText: 'Add Column Rule',
+				},
+				placeholder: 'Add Column Rule',
+				default: {},
+				description:
+					'Configure per-column data type enforcement, required/min/max/allowed-value validation, regex validate/extract/replace, and date/time format & timezone conversion',
+				options: [
+					{
+						name: 'ruleValues',
+						displayName: 'Column Rule',
+						values: [
+							{
+								displayName: 'Allowed Values (Comma-Separated)',
+								name: 'allowedValues',
+								type: 'string',
+								default: '',
+								placeholder: 'free, pro, enterprise',
+							},
+							{
+								displayName: 'Case Transform',
+								name: 'caseTransform',
+								type: 'options',
+								options: [
+									{ name: 'Lowercase', value: 'lowercase' },
+									{ name: 'None', value: 'none' },
+									{ name: 'Uppercase', value: 'uppercase' },
+								],
+								default: 'none',
+							},
+							{
+								displayName: 'Column Name or ID',
+								name: 'targetColumn',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getTargetColumns',
+									loadOptionsDependsOn: ['tableId.value'],
+								},
+								default: '',
+								description:
+									'Target table column to validate or transform. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+							},
+							{
+								displayName: 'Custom Validation Message',
+								name: 'validationMessage',
+								type: 'string',
+								default: '',
+								placeholder: 'Invalid email address',
+							},
+							{
+								displayName: 'Data Type',
+								name: 'dataType',
+								type: 'options',
+								options: [
+									{ name: 'Auto (From Database Schema)', value: 'auto' },
+									{ name: 'Boolean', value: 'boolean' },
+									{ name: 'Date', value: 'date' },
+									{ name: 'Date & Time', value: 'datetime' },
+									{ name: 'Decimal / Float', value: 'decimal' },
+									{ name: 'Integer', value: 'integer' },
+									{ name: 'JSON', value: 'json' },
+									{ name: 'String', value: 'string' },
+								],
+								default: 'auto',
+							},
+							{
+								displayName: 'Date / Time Input Format',
+								name: 'inputDateFormat',
+								type: 'options',
+								options: [
+									{ name: 'Auto-Detect', value: 'auto' },
+									{ name: 'DD/MM/YYYY', value: 'DD/MM/YYYY' },
+									{ name: 'MM/DD/YYYY', value: 'MM/DD/YYYY' },
+									{ name: 'Unix Milliseconds', value: 'unixMs' },
+									{ name: 'Unix Seconds', value: 'unixSeconds' },
+									{ name: 'YYYY-MM-DD', value: 'YYYY-MM-DD' },
+								],
+								default: 'auto',
+							},
+							{
+								displayName: 'Date / Time Output Format',
+								name: 'dateTimeOutput',
+								type: 'options',
+								options: [
+									{ name: 'ISO 8601', value: 'iso' },
+									{ name: 'None (Keep As-Is)', value: 'none' },
+									{ name: 'SQL Date (YYYY-MM-DD)', value: 'sqlDate' },
+									{ name: 'SQL DateTime', value: 'sqlDateTime', description: 'Format as YYYY-MM-DD HH:mm:ss' },
+									{ name: 'SQL Time', value: 'sqlTime', description: 'Format as HH:mm:ss' },
+									{ name: 'Unix Milliseconds', value: 'unixMs' },
+									{ name: 'Unix Seconds', value: 'unixSeconds' },
+								],
+								default: 'none',
+							},
+							{
+								displayName: 'Default Value',
+								name: 'defaultValue',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Fail If Regex Does Not Match',
+								name: 'failOnRegexMismatch',
+								type: 'boolean',
+								default: true,
+								description: 'Whether an Extract regex miss raises a REGEX_VALIDATION error instead of setting null',
+							},
+							{
+								displayName: 'Max Value / Length',
+								name: 'maxValue',
+								type: 'string',
+								default: '',
+								description: 'Maximum numeric value or maximum string length',
+							},
+							{
+								displayName: 'Min Value / Length',
+								name: 'minValue',
+								type: 'string',
+								default: '',
+								description: 'Minimum numeric value or minimum string length',
+							},
+							{
+								displayName: 'Regex Action',
+								name: 'regexAction',
+								type: 'options',
+								options: [
+									{ name: 'Extract Match / Capture Group', value: 'extract' },
+									{ name: 'Find & Replace', value: 'replace' },
+									{ name: 'Validate Pattern', value: 'validate' },
+								],
+								default: 'validate',
+							},
+							{
+								displayName: 'Regex Flags',
+								name: 'regexFlags',
+								type: 'string',
+								default: '',
+								placeholder: 'i or gi',
+							},
+							{
+								displayName: 'Regex Pattern',
+								name: 'regexPattern',
+								type: 'string',
+								default: '',
+								placeholder: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$',
+							},
+							{
+								displayName: 'Regex Replacement',
+								name: 'regexReplacement',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Required (Disallow Empty / Null)',
+								name: 'required',
+								type: 'boolean',
+								default: false,
+							},
+							{
+								displayName: 'Target Timezone',
+								name: 'targetTimezone',
+								type: 'string',
+								default: 'UTC',
+								placeholder: 'UTC, America/Chicago, Asia/Ho_Chi_Minh',
+								description: 'IANA timezone used when converting date/time outputs',
+							},
+							{
+								displayName: 'Trim Whitespace',
+								name: 'trim',
+								type: 'boolean',
+								default: false,
+							},
+						],
+					},
+				],
 			},
 
 			// ----------------------------------
@@ -1113,7 +638,7 @@ export class FoxSchemaMatch implements INodeType {
 						name: 'Route Failed Rows to Error Output',
 						value: 'routeToErrorOutput',
 						description:
-							'Continue writing valid rows to Matched output (0) and route failed parse/match/DB rows to Errors output (1)',
+							'Continue writing valid rows to Matched output (0) and route failed validation/regex/DB rows to Errors output (1)',
 					},
 					{
 						name: 'Skip Failed Rows & Log in Summary',
@@ -1125,11 +650,11 @@ export class FoxSchemaMatch implements INodeType {
 						name: 'Stop Workflow (Throw Error)',
 						value: 'throwError',
 						description:
-							'Abort immediately and throw NodeOperationError on the first parse, schema, or database error',
+							'Abort immediately and throw NodeOperationError on the first validation or database error',
 					},
 				],
 				default: 'routeToErrorOutput',
-				description: 'How parse, schema mismatch, coercion, and database errors should be handled',
+				description: 'How validation, regex, date conversion, and database errors should be handled',
 			},
 			{
 				displayName: 'Error Handler Options',
@@ -1138,13 +663,6 @@ export class FoxSchemaMatch implements INodeType {
 				placeholder: 'Add Error Handler Option',
 				default: {},
 				options: [
-					{
-						displayName: 'Fail on Regex Line Mismatch',
-						name: 'failOnUnmatchedLine',
-						type: 'boolean',
-						default: true,
-						description: 'Whether lines that do not match the Regex Pattern produce an error record',
-					},
 					{
 						displayName: 'Isolate Failed Batch Rows',
 						name: 'isolateFailedBatchRows',
@@ -1226,7 +744,7 @@ export class FoxSchemaMatch implements INodeType {
 				type: 'boolean',
 				default: false,
 				description:
-					'Whether to parse, match, coerce, and compile SQL statements without writing to the target database',
+					'Whether to validate, coerce, and compile SQL statements without writing to the target database',
 			},
 			{
 				displayName: 'Options',
@@ -1236,26 +754,11 @@ export class FoxSchemaMatch implements INodeType {
 				default: {},
 				options: [
 					{
-						displayName: 'Allow Unsafe SQL',
-						name: 'allowUnsafeSql',
-						type: 'boolean',
-						default: false,
-						description: 'Whether to allow SQL Expression typed bind parameters in Raw SQL Query mode',
-					},
-					{
 						displayName: 'Batch Size',
 						name: 'batchSize',
 						type: 'number',
 						default: 100,
 						description: 'Maximum rows per multi-row Insert / Upsert statement (capped per dialect)',
-					},
-					{
-						displayName: 'Comment Line Prefix',
-						name: 'commentPrefix',
-						type: 'string',
-						default: '',
-						placeholder: '# or --',
-						description: 'Skip CSV/text lines starting with this prefix',
 					},
 					{
 						displayName: 'Ignore Duplicates on Insert',
@@ -1272,13 +775,6 @@ export class FoxSchemaMatch implements INodeType {
 						description: 'Whether auto-matched identity/auto-increment columns are included in Insert',
 					},
 					{
-						displayName: 'Skip Empty Lines',
-						name: 'skipEmptyLines',
-						type: 'boolean',
-						default: true,
-						description: 'Whether blank lines are ignored when parsing CSV or Text',
-					},
-					{
 						displayName: 'Skip Null Values on Update',
 						name: 'skipNullValuesOnUpdate',
 						type: 'boolean',
@@ -1291,7 +787,7 @@ export class FoxSchemaMatch implements INodeType {
 						type: 'boolean',
 						default: false,
 						description:
-							'Whether to bypass FoxSchema catalog lookup (disables column discovery and type checks)',
+							'Whether to bypass FoxSchema catalog lookup (disables column discovery and schema checks)',
 					},
 					{
 						displayName: 'Timeout (Ms)',
@@ -1306,13 +802,6 @@ export class FoxSchemaMatch implements INodeType {
 						type: 'boolean',
 						default: true,
 						description: 'Whether empty strings ("") are converted to SQL NULL',
-					},
-					{
-						displayName: 'Trim Parsed Values',
-						name: 'trimValues',
-						type: 'boolean',
-						default: true,
-						description: 'Whether leading and trailing whitespace is trimmed from CSV/text cells',
 					},
 					{
 						displayName: 'Use Transaction',

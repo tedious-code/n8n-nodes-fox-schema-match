@@ -1,33 +1,24 @@
 # Fox Schema Match (`n8n-nodes-fox-schema-match`)
 
-**Fox Schema Pipe Match** community node for [n8n](https://n8n.io), powered by [FoxSchema](https://foxschema.com) (`@foxschema/db` + `@foxschema/sql`).
+Schema-mapped **Insert**, **Update**, and **Create or Update (Upsert)** community node for [n8n](https://n8n.io), powered by [FoxSchema](https://foxschema.com) (`@foxschema/db` + `@foxschema/sql`).
 
-Ingest data from **Execute Raw Query**, **JSON / NDJSON**, **CSV**, or **Text** (pipe-delimited `|`, TSV, custom delimiter, key-value, regex capture groups, fixed-width, raw lines), automatically or manually match fields to target database table columns, coerce types using FoxSchema catalog metadata, execute **Insert**, **Update**, or **Create or Update (Upsert)** across **13 SQL dialects**, and route parse/schema/DB failures through a built-in **Error Handler**.
+Connect any upstream n8n node, load your database table schema and column types automatically via FoxSchema, map fields manually or automatically with **Data Type enforcement**, **Validation** (`required`, `min`/`max`, `allowedValues`), **Regex** (`validate` / `extract` / `replace`), and **Date/Time conversion** across **13 SQL dialects**, and route row/batch errors cleanly through the built-in **Error Handler**.
 
 ---
 
 ## Screenshots & Video Demo
 
-- **End-to-end Playwright video walkthrough (live n8n + PostgreSQL):** [screenshots/fox-schema-match-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-demo.webm)
+- **End-to-end Playwright video walkthrough:** [screenshots/fox-schema-match-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-demo.webm)
 - **Sample workflow:** [examples/sample-workflow-pipe-match.json](examples/sample-workflow-pipe-match.json)
-
-### Canvas Execution (Matched + Error Handler Branches)
-![Canvas Execution](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/canvas-executed.png)
 
 ### Visual Table Mapper (Mapped Database Insert / Update / Upsert)
 ![Visual Table Mapper Insert](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/visual-table-mapper-insert.png)
 
-### Node Configuration & Matched Output
-![Node Configuration and Matched Output](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-matched-output.png)
+### Canvas Execution (Matched + Error Handler Branches)
+![Canvas Execution](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/canvas-executed.png)
 
-### Data Sources (CSV, Execute Raw Query, JSON, Text)
-![Data Source Options](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/data-source-options.png)
-
-### Error Handler Output (Row-Level Isolation: Type Coercion + DB Constraint)
+### Error Handler Output (Row-Level Isolation)
 ![Error Handler Output](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-error-handler.png)
-
-### Schema Match & Error Handler Parameters
-![Schema Match and Error Handler Parameters](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-schema-match-params.png)
 
 ---
 
@@ -43,29 +34,33 @@ Drivers stay external so package installation succeeds without native build tool
 
 ## Features
 
-### 1. Data Sources
-- **Execute Raw Query**: Run parameterized SQL (`?` placeholders rewritten per dialect) against the target DB credential or an inline cross-dialect source connection, with optional `rawQueryDataPath` extraction.
-- **JSON**: Read incoming workflow `$json` items, JSON / NDJSON strings or expressions, or binary `.json` / `.ndjson` files with optional dot/bracket `jsonRootPath`.
-- **CSV**: RFC-4180 parser with custom delimiters (`,`, `;`, `\t`, `|`, custom), quoted fields, multiline values, BOM stripping, headerless custom columns, and binary file support.
-- **Text**: Pipe-delimited (`|`), TSV (`\t`), custom delimiters, `key=value` pairs, regex named/numbered capture groups, fixed-width column specs (`col:start-end` or `col:width`), and raw lines.
+### 1. Schema Loading & Column Mapping
+- **FoxSchema Catalog Introspection**: Browse target tables and load columns, primary keys, nullability, and data types (`searchTargetTables`, `getTargetColumns`, `getMappingColumns`).
+- **Visual Table Mapper (`Columns` UI)** *(default)*: Auto-populates every column of the selected table (`Map Each Column Manually` with drag-and-drop `$json` expressions, or `Map Automatically`) and pre-selects primary keys for `Update` / `Create or Update`.
+- **Auto-Match (`auto`)**: Automatically matches incoming `$json` fields using `Exact`, `Case-Insensitive`, or `Normalized` (`firstName` → `first_name`) matching.
+- **Manual Field Mapping (`manual`)**: Map nested JSON paths (`user.profile.email`) to target columns with transforms.
 
-### 2. Pipe Match & Coercion
-- **FoxSchema Catalog Introspection**: Browse target tables and columns (`searchTargetTables`, `getTargetColumns`, `getMappingColumns`) and auto-detect primary/unique keys.
-- **Mapping Modes**:
-  - **Visual Table Mapper (Columns UI)**: Uses n8n's native `resourceMapper` to auto-populate every column of the selected table (`Map Each Column Manually` with drag-and-drop `$json` expressions or `$row.<field>` templates for CSV/Text/Raw Query, or `Map Automatically`).
-  - **Auto-Match**: Exact, Case-Insensitive, or Normalized (`firstName` / `first-name` / `FIRST_NAME` → `first_name`), with optional per-column overrides and transforms.
-  - **Manual Column Mapping**: Map source paths (`user.email`) to target columns with defaults and transforms (`trim`, `lowercase`, `uppercase`, `toNumber`, `toBoolean`, `toIsoDate`, `jsonStringify`, `nullIfEmpty`).
-  - **Positional**: Map ordered fields by column index.
+### 2. Column Rules (Data Type, Validation, Regex & Date/Time)
+Add per-column rules loaded directly from your target table:
+- **Data Type Enforcement**: `Auto` (from database schema), `String`, `Integer`, `Decimal / Float`, `Boolean`, `Date`, `Date & Time`, `JSON`.
+- **Validation**: `Required`, `Min / Max Value or Length`, `Allowed Values` (comma-separated enum), `Default Value`, `Trim Whitespace`, `Case Transform`, and custom validation error messages.
+- **Regex Support**:
+  - **Validate Pattern**: Reject non-matching values with `REGEX_VALIDATION`.
+  - **Extract Match / Capture Group**: Extract a regex group or token before type coercion.
+  - **Find & Replace**: Clean or normalize strings before saving.
+- **Date / Time Conversion**:
+  - Parse from `Auto-Detect`, `YYYY-MM-DD`, `MM/DD/YYYY`, `DD/MM/YYYY`, `Unix Seconds`, or `Unix Milliseconds`.
+  - Convert to `ISO 8601`, `SQL Date (YYYY-MM-DD)`, `SQL DateTime (YYYY-MM-DD HH:mm:ss)`, `SQL Time (HH:mm:ss)`, `Unix Seconds`, or `Unix Milliseconds` in any IANA **Target Timezone** (`UTC`, `America/Chicago`, etc.).
 
 ### 3. Write Operations
 - **Create or Update (Upsert)**: Dialect-native `ON CONFLICT ... DO UPDATE` (Postgres/Cockroach/Yugabyte/SQLite/DuckDB), `ON DUPLICATE KEY UPDATE` (MySQL/MariaDB/TiDB), `MERGE INTO` (SQL Server/Azure SQL/Oracle), and two-step fallback (Redshift/ClickHouse).
-- **Insert**: Chunked multi-row parameterized inserts respecting per-dialect parameter limits (`maxInsertRows`) with optional duplicate ignore.
-- **Update**: Parameterized `UPDATE ... SET ... WHERE ...` matched on selected or auto-detected key columns, with optional `requireMatchedRow`.
-- **Dry Run**: Preview compiled SQL and matched rows without mutating the database.
+- **Insert**: Chunked multi-row parameterized inserts respecting per-dialect parameter limits (`maxInsertRows`) with optional `Ignore Duplicates on Insert`.
+- **Update**: Parameterized `UPDATE ... SET ... WHERE ...` matched on selected or auto-detected key columns, with optional `Require Matched Row on Update`.
+- **Dry Run**: Preview compiled SQL and validated rows without mutating the database.
 
 ### 4. Error Handler
-- **Route Failed Rows to Error Output** *(default)*: Dual outputs (`Matched` at index `0`, `Errors` at index `1`) — isolates failed parse, schema mismatch, type coercion, missing key, or DB constraint rows (including automatic batch-to-row fallback) while valid rows continue succeeding.
-- **Rollback Batch & Route to Error Output**: Runs in a database transaction, rolls back on any error, and emits `TRANSACTION_ABORTED` details to the `Errors` output.
+- **Route Failed Rows to Error Output** *(default)*: Dual outputs (`Matched` at index `0`, `Errors` at index `1`) — isolates failed validation, regex (`REGEX_VALIDATION`), date (`DATE_PARSE_ERROR`), type coercion (`TYPE_COERCION`), or DB constraint rows (including automatic batch-to-row fallback) while valid rows continue succeeding.
+- **Rollback Batch & Route to Error Output**: Runs in a database transaction, rolls back on any failure, and emits `TRANSACTION_ABORTED` details to the `Errors` output.
 - **Skip Failed Rows & Log in Summary**: Single output combining `results[]` and `errors[]`.
 - **Stop Workflow (Throw Error)**: Fails immediately with `NodeOperationError`.
 

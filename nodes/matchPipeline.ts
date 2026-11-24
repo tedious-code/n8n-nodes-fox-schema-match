@@ -11,12 +11,6 @@ import {
 	toResolvedConnection,
 } from './dbConnection';
 import {
-	executeRawQuerySource,
-	parseCsvString,
-	parseJsonPayload,
-	parseTextPayload,
-} from './dataSources';
-import {
 	buildTargetTableMeta,
 	findTableSchemaInCatalog,
 	matchSourceRow,
@@ -25,23 +19,17 @@ import {
 import { assertIdent, stripTableSchema } from './sqlHelpers';
 import { executeWritePlan } from './writeEngine';
 import type {
-	BindingParam,
-	DataSourceType,
+	ColumnValidationRule,
 	ErrorHandlerMode,
 	ExecutionSummary,
-	InlineConnectionConfig,
-	JsonInputMode,
 	ManualColumnMapping,
 	MappedRowResult,
 	MappingMode,
 	MatchRule,
 	OutputMode,
 	ParsedSourceRow,
-	RawQueryConnectionMode,
 	RowFailureRecord,
 	TargetTableMeta,
-	TextInputMode,
-	TextParseFormat,
 	UnmatchedSourceBehavior,
 	WriteOperation,
 } from './types';
@@ -74,42 +62,6 @@ function parseCommaList(raw: unknown): string[] {
 		.filter(Boolean);
 }
 
-function resolveMapperTemplateValue(
-	rawValue: unknown,
-	rowData: Record<string, unknown>,
-): unknown {
-	if (typeof rawValue !== 'string') return rawValue;
-	const exactMatch = rawValue.match(/^\s*(?:\{\{\s*)?\$row\.([A-Za-z0-9_.-]+)(?:\s*\}\})?\s*$/);
-	if (exactMatch) {
-		const pathParts = exactMatch[1].split('.');
-		let cur: any = rowData;
-		for (const p of pathParts) {
-			if (cur === undefined || cur === null) return undefined;
-			cur = cur[p];
-		}
-		return cur;
-	}
-	return rawValue.replace(/\{\{\s*\$row\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_m, keyPath: string) => {
-		const pathParts = keyPath.split('.');
-		let cur: any = rowData;
-		for (const p of pathParts) {
-			if (cur === undefined || cur === null) return '';
-			cur = cur[p];
-		}
-		return cur === undefined || cur === null ? '' : String(cur);
-	});
-}
-
-async function readBinaryUtf8(
-	ctx: IExecuteFunctions,
-	itemIndex: number,
-	binaryPropertyName: string,
-): Promise<string> {
-	const prop = binaryPropertyName.trim() || 'data';
-	const buf = await ctx.helpers.getBinaryDataBuffer(itemIndex, prop);
-	return buf.toString('utf8');
-}
-
 export async function runFoxSchemaMatch(
 	ctx: IExecuteFunctions,
 ): Promise<INodeExecutionData[][]> {
@@ -127,7 +79,6 @@ export async function runFoxSchemaMatch(
 
 	const targetCredentials = await ctx.getCredentials('foxSchemaMatchDbApi');
 	const operation = ctx.getNodeParameter('operation', 0, 'upsert') as WriteOperation;
-	const dataSource = ctx.getNodeParameter('dataSource', 0, 'json') as DataSourceType;
 	const outputMode = ctx.getNodeParameter(
 		'outputMode',
 		0,
@@ -143,7 +94,6 @@ export async function runFoxSchemaMatch(
 
 	const timeoutMs = Number(options.timeoutMs ?? 15000);
 	const batchSize = Math.max(1, Number(options.batchSize ?? 100));
-	const allowUnsafeSql = options.allowUnsafeSql === true;
 	const skipSchemaLookup = options.skipSchemaLookup === true;
 
 	let table: string;
@@ -180,318 +130,11 @@ export async function runFoxSchemaMatch(
 		}
 	}
 
-	// Collect source rows + parse-stage errors across all input items
-	const parsedRows: ParsedSourceRow[] = [];
-	const allFailures: RowFailureRecord[] = [];
-	let rowCursor = 0;
-
-	const jsonInputMode =
-		dataSource === 'json'
-			? (ctx.getNodeParameter('jsonInputMode', 0, 'incomingItems') as JsonInputMode)
-			: undefined;
-
-	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-		try {
-			if (dataSource === 'json') {
-				const jsonRootPath = ctx.getNodeParameter(
-					'jsonRootPath',
-					itemIndex,
-					'',
-				) as string;
-
-				if (jsonInputMode === 'incomingItems') {
-					const res = parseJsonPayload(items[itemIndex].json, {
-						jsonRootPath,
-						itemIndex,
-						startingRowIndex: rowCursor,
-					});
-					rowCursor += res.rows.length + res.errors.length;
-					parsedRows.push(...res.rows);
-					for (const err of res.errors) {
-						allFailures.push({
-							...err,
-							error: err.message,
-							operation,
-							table,
-							dialect: resolvedTarget.dialect,
-							sourceRow: err.rawInput,
-						});
-					}
-				} else if (jsonInputMode === 'jsonString') {
-					const jsonPayload = ctx.getNodeParameter(
-						'jsonPayload',
-						itemIndex,
-						'',
-					) as unknown;
-					const res = parseJsonPayload(jsonPayload, {
-						jsonRootPath,
-						itemIndex,
-						startingRowIndex: rowCursor,
-					});
-					rowCursor += res.rows.length + res.errors.length;
-					parsedRows.push(...res.rows);
-					for (const err of res.errors) {
-						allFailures.push({
-							...err,
-							error: err.message,
-							operation,
-							table,
-							dialect: resolvedTarget.dialect,
-							sourceRow: err.rawInput,
-						});
-					}
-				} else {
-					const binProp = ctx.getNodeParameter(
-						'binaryPropertyName',
-						itemIndex,
-						'data',
-					) as string;
-					const content = await readBinaryUtf8(ctx, itemIndex, binProp);
-					const res = parseJsonPayload(content, {
-						jsonRootPath,
-						itemIndex,
-						startingRowIndex: rowCursor,
-					});
-					rowCursor += res.rows.length + res.errors.length;
-					parsedRows.push(...res.rows);
-					for (const err of res.errors) {
-						allFailures.push({
-							...err,
-							error: err.message,
-							operation,
-							table,
-							dialect: resolvedTarget.dialect,
-							sourceRow: err.rawInput,
-						});
-					}
-				}
-			} else if (dataSource === 'csv') {
-				const csvInputMode = ctx.getNodeParameter(
-					'csvInputMode',
-					itemIndex,
-					'textContent',
-				) as TextInputMode;
-				const csvText =
-					csvInputMode === 'binary'
-						? await readBinaryUtf8(
-								ctx,
-								itemIndex,
-								ctx.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string,
-							)
-						: (ctx.getNodeParameter('csvText', itemIndex, '') as string);
-
-				const csvDelimOpt = ctx.getNodeParameter('csvDelimiter', itemIndex, ',') as string;
-				const delimiter =
-					csvDelimOpt === 'custom'
-						? (ctx.getNodeParameter('csvCustomDelimiter', itemIndex, ',') as string)
-						: csvDelimOpt;
-				const hasHeader = ctx.getNodeParameter('hasHeader', itemIndex, true) as boolean;
-				const customHeaders = hasHeader
-					? ''
-					: (ctx.getNodeParameter('customHeaders', itemIndex, '') as string);
-
-				const res = parseCsvString(csvText, {
-					delimiter,
-					hasHeader,
-					customHeaders,
-					trimValues: options.trimValues !== false,
-					skipEmptyLines: options.skipEmptyLines !== false,
-					commentPrefix: options.commentPrefix ? String(options.commentPrefix) : undefined,
-					itemIndex,
-					startingRowIndex: rowCursor,
-				});
-				rowCursor += res.rows.length + res.errors.length;
-				parsedRows.push(...res.rows);
-				for (const err of res.errors) {
-					allFailures.push({
-						...err,
-						error: err.message,
-						operation,
-						table,
-						dialect: resolvedTarget.dialect,
-						sourceRow: err.rawInput,
-					});
-				}
-			} else if (dataSource === 'text') {
-				const textInputMode = ctx.getNodeParameter(
-					'textInputMode',
-					itemIndex,
-					'textContent',
-				) as TextInputMode;
-				const textFormat = ctx.getNodeParameter(
-					'textFormat',
-					itemIndex,
-					'pipe',
-				) as TextParseFormat;
-				const textContent =
-					textInputMode === 'binary'
-						? await readBinaryUtf8(
-								ctx,
-								itemIndex,
-								ctx.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string,
-							)
-						: (ctx.getNodeParameter('textContent', itemIndex, '') as string);
-
-				const hasHeader = ctx.getNodeParameter('hasHeader', itemIndex, true) as boolean;
-				const customHeaders = ctx.getNodeParameter(
-					'customHeaders',
-					itemIndex,
-					'',
-				) as string;
-				const customDelimiter = ctx.getNodeParameter(
-					'textCustomDelimiter',
-					itemIndex,
-					'|',
-				) as string;
-				const kvPairDelimiter = ctx.getNodeParameter(
-					'kvPairDelimiter',
-					itemIndex,
-					'\\s+',
-				) as string;
-				const kvSeparator = ctx.getNodeParameter('kvSeparator', itemIndex, '=') as string;
-				const regexPattern = ctx.getNodeParameter(
-					'regexPattern',
-					itemIndex,
-					'',
-				) as string;
-				const fixedWidthSpec = ctx.getNodeParameter(
-					'fixedWidthSpec',
-					itemIndex,
-					'',
-				) as string;
-
-				const res = parseTextPayload(textContent, {
-					textFormat,
-					customDelimiter,
-					hasHeader,
-					customHeaders,
-					trimValues: options.trimValues !== false,
-					skipEmptyLines: options.skipEmptyLines !== false,
-					commentPrefix: options.commentPrefix ? String(options.commentPrefix) : undefined,
-					kvPairDelimiter,
-					kvSeparator,
-					regexPattern,
-					fixedWidthSpec,
-					failOnUnmatchedLine: errorOpts.failOnUnmatchedLine !== false,
-					itemIndex,
-					startingRowIndex: rowCursor,
-				});
-				rowCursor += res.rows.length + res.errors.length;
-				parsedRows.push(...res.rows);
-				for (const err of res.errors) {
-					allFailures.push({
-						...err,
-						error: err.message,
-						operation,
-						table,
-						dialect: resolvedTarget.dialect,
-						sourceRow: err.rawInput,
-					});
-				}
-			} else if (dataSource === 'rawQuery') {
-				const connMode = ctx.getNodeParameter(
-					'rawQueryConnectionMode',
-					itemIndex,
-					'sameAsTarget',
-				) as RawQueryConnectionMode;
-				const rawSql = ctx.getNodeParameter('rawSql', itemIndex, '') as string;
-				const bindings = ctx.getNodeParameter(
-					'rawQueryBindings.parameterValues',
-					itemIndex,
-					[],
-				) as BindingParam[];
-				const dataPath = ctx.getNodeParameter(
-					'rawQueryDataPath',
-					itemIndex,
-					'',
-				) as string;
-				const rawQueryTimeout = Number(
-					ctx.getNodeParameter('rawQueryTimeoutMs', itemIndex, timeoutMs),
-				);
-
-				let sourceCred: Record<string, any> | undefined;
-				let inlineConn: InlineConnectionConfig | undefined;
-
-				if (connMode === 'inline') {
-					inlineConn = {
-						dialect: ctx.getNodeParameter('sourceInlineDialect', itemIndex, 'postgres') as string,
-						connectionString: ctx.getNodeParameter(
-							'sourceInlineConnectionString',
-							itemIndex,
-							'',
-						) as string,
-						host: ctx.getNodeParameter('sourceInlineHost', itemIndex, 'localhost') as string,
-						port: ctx.getNodeParameter('sourceInlinePort', itemIndex, 5432) as number,
-						database: ctx.getNodeParameter('sourceInlineDatabase', itemIndex, '') as string,
-						username: ctx.getNodeParameter('sourceInlineUsername', itemIndex, '') as string,
-						password: ctx.getNodeParameter('sourceInlinePassword', itemIndex, '') as string,
-						schema: ctx.getNodeParameter('sourceInlineSchema', itemIndex, '') as string,
-						useSsl: ctx.getNodeParameter('sourceInlineUseSsl', itemIndex, false) as boolean,
-						rejectUnauthorized: ctx.getNodeParameter(
-							'sourceInlineRejectUnauthorized',
-							itemIndex,
-							true,
-						) as boolean,
-					};
-				}
-
-				const res = await executeRawQuerySource({
-					ctx,
-					node,
-					targetCredentials: targetCredentials as Record<string, any>,
-					sourceCredential: sourceCred,
-					connectionMode: connMode,
-					inlineConnection: inlineConn,
-					sql: rawSql,
-					bindings,
-					allowUnsafeSql,
-					dataPath,
-					timeoutMs: rawQueryTimeout,
-					itemIndex,
-					startingRowIndex: rowCursor,
-				});
-				rowCursor += res.rows.length + res.errors.length;
-				parsedRows.push(...res.rows);
-				for (const err of res.errors) {
-					allFailures.push({
-						...err,
-						error: err.message,
-						operation,
-						table,
-						dialect: resolvedTarget.dialect,
-						sourceRow: err.rawInput,
-					});
-				}
-			}
-		} catch (itemErr: any) {
-			const msg = itemErr?.message || String(itemErr);
-			if (errorHandlerMode === 'throwError' && !ctx.continueOnFail()) {
-				throw itemErr instanceof NodeOperationError
-					? itemErr
-					: new NodeOperationError(node, msg, { itemIndex });
-			}
-			allFailures.push({
-				rowIndex: rowCursor++,
-				itemIndex,
-				stage: 'source_parse',
-				errorCode: 'PARSE_ERROR',
-				error: msg,
-				operation,
-				table,
-				dialect: resolvedTarget.dialect,
-				sourceRow: items[itemIndex].json,
-			});
-		}
-	}
-
-	if (errorHandlerMode === 'throwError' && allFailures.length > 0 && !ctx.continueOnFail()) {
-		throw new NodeOperationError(node, allFailures[0].error, {
-			itemIndex: allFailures[0].itemIndex,
-		});
-	}
-
-	// Schema matching configuration
-	const mappingMode = ctx.getNodeParameter('mappingMode', 0, 'auto') as MappingMode;
+	const mappingMode = ctx.getNodeParameter(
+		'mappingMode',
+		0,
+		'resourceMapper',
+	) as MappingMode;
 	const matchRule = ctx.getNodeParameter(
 		'matchRule',
 		0,
@@ -507,9 +150,11 @@ export async function runFoxSchemaMatch(
 		0,
 		[],
 	) as ManualColumnMapping[];
-	const positionalColumns = parseCommaList(
-		ctx.getNodeParameter('positionalColumns', 0, ''),
-	);
+	const columnRules = ctx.getNodeParameter(
+		'columnRules.ruleValues',
+		0,
+		[],
+	) as ColumnValidationRule[];
 
 	const resourceMapperParam =
 		mappingMode === 'resourceMapper'
@@ -537,57 +182,50 @@ export async function runFoxSchemaMatch(
 		matchRule,
 	});
 
-	// Build effective rows for resourceMapper defineBelow vs autoMapInputData
-	let rowsForMatching: ParsedSourceRow[] = parsedRows;
-	let effectiveEngineMappingMode: 'auto' | 'manual' | 'positional' =
-		mappingMode === 'resourceMapper' ? 'auto' : mappingMode;
+	// Build source rows from incoming workflow items
+	const rowsForMatching: ParsedSourceRow[] = [];
+	let effectiveEngineMappingMode: 'auto' | 'manual' =
+		mappingMode === 'manual' ? 'manual' : 'auto';
 	let effectiveIncludeIdentityOnInsert = options.includeIdentityOnInsert === true;
 
 	if (mappingMode === 'resourceMapper') {
 		const rmMode = resourceMapperParam?.mappingMode || 'defineBelow';
 		if (rmMode === 'defineBelow') {
 			effectiveEngineMappingMode = 'auto';
-			// Explicit columns defined in Visual Table Mapper should be included even if identity
 			effectiveIncludeIdentityOnInsert = true;
-
-			if (dataSource === 'json' && jsonInputMode === 'incomingItems') {
-				rowsForMatching = [];
-				for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-					const itemMapper = ctx.getNodeParameter(
-						'columns',
-						itemIndex,
-						{},
-					) as Partial<ResourceMapperValue>;
-					const definedObj = (itemMapper?.value ?? {}) as Record<string, unknown>;
-					rowsForMatching.push({
-						rowIndex: itemIndex,
-						itemIndex,
-						data: definedObj,
-						positionalValues: Object.values(definedObj),
-					});
-				}
-			} else {
-				const templateObj = (resourceMapperParam?.value ?? {}) as Record<string, unknown>;
-				rowsForMatching = parsedRows.map((r) => {
-					const mappedData: Record<string, unknown> = {};
-					for (const [col, val] of Object.entries(templateObj)) {
-						mappedData[col] = resolveMapperTemplateValue(val, r.data);
-					}
-					return {
-						rowIndex: r.rowIndex,
-						itemIndex: r.itemIndex,
-						data: mappedData,
-						positionalValues: Object.values(mappedData),
-					};
+			for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+				const itemMapper = ctx.getNodeParameter(
+					'columns',
+					itemIndex,
+					{},
+				) as Partial<ResourceMapperValue>;
+				const definedObj = (itemMapper?.value ?? {}) as Record<string, unknown>;
+				rowsForMatching.push({
+					rowIndex: itemIndex,
+					itemIndex,
+					data: definedObj,
 				});
 			}
 		} else {
-			// autoMapInputData
-			effectiveEngineMappingMode = 'auto';
+			for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+				rowsForMatching.push({
+					rowIndex: itemIndex,
+					itemIndex,
+					data: (items[itemIndex].json ?? {}) as Record<string, unknown>,
+				});
+			}
+		}
+	} else {
+		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+			rowsForMatching.push({
+				rowIndex: itemIndex,
+				itemIndex,
+				data: (items[itemIndex].json ?? {}) as Record<string, unknown>,
+			});
 		}
 	}
 
-	// Match & coerce every parsed row
+	const allFailures: RowFailureRecord[] = [];
 	const mappedRows: MappedRowResult[] = [];
 	const matchedColumnSet = new Set<string>();
 
@@ -601,7 +239,7 @@ export async function runFoxSchemaMatch(
 			matchRule,
 			unmatchedSourceBehavior,
 			manualMappings,
-			positionalColumns,
+			columnRules,
 			matchKeyColumns: effectiveMatchKeys,
 			emptyStringAsNull: options.emptyStringAsNull !== false,
 			strictTypeValidation: errorOpts.strictTypeValidation !== false,
@@ -621,7 +259,6 @@ export async function runFoxSchemaMatch(
 		}
 	}
 
-	// If rollbackAndRouteToError had parse or match errors before DB write, abort before mutating DB!
 	let writeResult = {
 		outcomes: [] as ExecutionSummary['results'],
 		failures: [] as RowFailureRecord[],
@@ -665,9 +302,7 @@ export async function runFoxSchemaMatch(
 		} catch (writeErr: any) {
 			const msg = writeErr?.message || String(writeErr);
 			if (errorHandlerMode === 'throwError' && !ctx.continueOnFail()) {
-				throw writeErr instanceof NodeOperationError
-					? writeErr
-					: new NodeOperationError(node, msg);
+				throw new NodeOperationError(node, msg);
 			}
 			for (const r of mappedRows) {
 				allFailures.push({
@@ -692,11 +327,10 @@ export async function runFoxSchemaMatch(
 
 	const summary: ExecutionSummary = {
 		operation,
-		dataSource,
 		table,
 		dialect: resolvedTarget.dialect,
 		dryRun,
-		totalInputRows: parsedRows.length + allFailures.filter((f) => f.stage === 'source_parse').length,
+		totalInputRows: rowsForMatching.length,
 		succeededCount: writeResult.outcomes.length,
 		failedCount: allFailures.length,
 		skippedCount: writeResult.skippedCount,
@@ -738,12 +372,10 @@ export async function runFoxSchemaMatch(
 			} as unknown as IDataObject,
 		});
 	} else {
-		// summaryWithRows
 		mainOutput.push({
 			json: (hasErrorBranch
 				? {
 						operation: summary.operation,
-						dataSource: summary.dataSource,
 						table: summary.table,
 						dialect: summary.dialect,
 						dryRun: summary.dryRun,
@@ -771,7 +403,6 @@ export async function runFoxSchemaMatch(
 		return [mainOutput, errorOutput];
 	}
 
-	// Single-output mode when skipAndLog or continueOnFail is active
 	if (outputMode === 'rowByRow' && allFailures.length > 0) {
 		for (const fail of allFailures) {
 			mainOutput.push({

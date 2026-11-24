@@ -1,6 +1,6 @@
 {
   "id": "foxSchemaMatchDemo1",
-  "name": "Fox Schema Pipe Match - CSV Upsert & Error Handler",
+  "name": "Fox Schema Match - Mapped Insert / Upsert with Validation & Regex",
   "active": false,
   "nodes": [
     {
@@ -18,19 +18,42 @@
           "mode": "list",
           "value": "pipe_match_users"
         },
-        "dataSource": "csv",
-        "csvInputMode": "textContent",
-        "csvText": "id,firstName,email,age,tier\n1,Alice Updated,alice@example.com,31,enterprise\n2,Bob Builder,bob@example.com,27,pro\n3,Bad Age,bad@example.com,not_a_number,free\n4,Negative Age,neg@example.com,-5,free",
-        "csvDelimiter": ",",
-        "hasHeader": true,
-        "mappingMode": "auto",
-        "matchRule": "normalized",
-        "unmatchedSourceBehavior": "ignore",
-        "errorHandlerMode": "routeToErrorOutput",
-        "errorHandlerOptions": {
-          "isolateFailedBatchRows": true,
-          "strictTypeValidation": true
+        "mappingMode": "resourceMapper",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": 10,
+            "first_name": "Elena Vance",
+            "email": "elena@foxschema.com",
+            "age": 28,
+            "tier": "pro"
+          },
+          "matchingColumns": ["id"],
+          "schema": [
+            { "id": "id", "displayName": "id", "defaultMatch": true, "canBeUsedToMatch": true, "required": true, "display": true, "type": "number", "removed": false },
+            { "id": "first_name", "displayName": "first_name", "defaultMatch": false, "canBeUsedToMatch": true, "required": true, "display": true, "type": "string", "removed": false },
+            { "id": "email", "displayName": "email", "defaultMatch": false, "canBeUsedToMatch": true, "required": true, "display": true, "type": "string", "removed": false },
+            { "id": "age", "displayName": "age", "defaultMatch": false, "canBeUsedToMatch": true, "required": false, "display": true, "type": "number", "removed": false },
+            { "id": "tier", "displayName": "tier", "defaultMatch": false, "canBeUsedToMatch": true, "required": false, "display": true, "type": "string", "removed": false }
+          ]
         },
+        "columnRules": {
+          "ruleValues": [
+            {
+              "targetColumn": "email",
+              "trim": true,
+              "caseTransform": "lowercase",
+              "regexAction": "validate",
+              "regexPattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+            },
+            {
+              "targetColumn": "age",
+              "dataType": "integer",
+              "minValue": "0"
+            }
+          ]
+        },
+        "errorHandlerMode": "routeToErrorOutput",
         "outputMode": "summaryWithRows"
       },
       "id": "fox-match-1",

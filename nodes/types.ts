@@ -1,27 +1,43 @@
 import type { SupportedDialect } from './supportedDialects';
 
-export type DataSourceType = 'rawQuery' | 'json' | 'csv' | 'text';
-
 export type WriteOperation = 'insert' | 'update' | 'upsert';
 
-export type MappingMode = 'auto' | 'manual' | 'positional' | 'resourceMapper';
+export type MappingMode = 'resourceMapper' | 'auto' | 'manual';
 
 export type MatchRule = 'exact' | 'caseInsensitive' | 'normalized';
 
 export type UnmatchedSourceBehavior = 'ignore' | 'error' | 'include';
 
-export type JsonInputMode = 'incomingItems' | 'jsonString' | 'binary';
+export type ColumnDataTypeOverride =
+	| 'auto'
+	| 'string'
+	| 'integer'
+	| 'decimal'
+	| 'boolean'
+	| 'date'
+	| 'datetime'
+	| 'json';
 
-export type TextInputMode = 'textContent' | 'binary';
+export type RegexAction = 'validate' | 'extract' | 'replace';
 
-export type TextParseFormat =
-	| 'pipe'
-	| 'tsv'
-	| 'customDelimiter'
-	| 'keyValue'
-	| 'regex'
-	| 'fixedWidth'
-	| 'lines';
+export type InputDateFormat =
+	| 'auto'
+	| 'YYYY-MM-DD'
+	| 'MM/DD/YYYY'
+	| 'DD/MM/YYYY'
+	| 'unixSeconds'
+	| 'unixMs';
+
+export type DateTimeOutputFormat =
+	| 'none'
+	| 'iso'
+	| 'sqlDateTime'
+	| 'sqlDate'
+	| 'sqlTime'
+	| 'unixSeconds'
+	| 'unixMs';
+
+export type CaseTransform = 'none' | 'lowercase' | 'uppercase';
 
 export type ColumnTransform =
 	| 'none'
@@ -42,26 +58,6 @@ export type ErrorHandlerMode =
 
 export type OutputMode = 'summaryWithRows' | 'rowByRow' | 'summaryOnly';
 
-export type RawQueryConnectionMode = 'sameAsTarget' | 'separateCredential' | 'inline';
-
-export interface BindingParam {
-	type: 'string' | 'number' | 'boolean' | 'date' | 'json' | 'null' | 'sql';
-	value: string;
-}
-
-export interface InlineConnectionConfig {
-	dialect: string;
-	connectionString?: string;
-	host?: string;
-	port?: number;
-	database?: string;
-	username?: string;
-	password?: string;
-	schema?: string;
-	useSsl?: boolean;
-	rejectUnauthorized?: boolean;
-}
-
 export interface ResolvedConnection {
 	dialect: SupportedDialect;
 	label: string;
@@ -76,21 +72,32 @@ export interface ManualColumnMapping {
 	skipIfEmpty?: boolean;
 }
 
+export interface ColumnValidationRule {
+	targetColumn: string;
+	dataType?: ColumnDataTypeOverride;
+	required?: boolean;
+	defaultValue?: string;
+	trim?: boolean;
+	caseTransform?: CaseTransform;
+	regexAction?: RegexAction;
+	regexPattern?: string;
+	regexFlags?: string;
+	regexReplacement?: string;
+	failOnRegexMismatch?: boolean;
+	inputDateFormat?: InputDateFormat;
+	dateTimeOutput?: DateTimeOutputFormat;
+	targetTimezone?: string;
+	minValue?: string;
+	maxValue?: string;
+	allowedValues?: string;
+	validationMessage?: string;
+}
+
 export interface ParsedSourceRow {
 	rowIndex: number;
 	itemIndex: number;
 	data: Record<string, unknown>;
 	positionalValues?: unknown[];
-	rawText?: string;
-}
-
-export interface ParseErrorRecord {
-	rowIndex: number;
-	itemIndex: number;
-	stage: 'source_parse';
-	errorCode: 'PARSE_ERROR';
-	message: string;
-	rawInput?: unknown;
 }
 
 export interface TargetColumnMeta {
@@ -125,9 +132,11 @@ export interface MappedRowResult {
 }
 
 export type MatchErrorCode =
-	| 'PARSE_ERROR'
 	| 'SCHEMA_MISMATCH'
 	| 'TYPE_COERCION'
+	| 'REGEX_VALIDATION'
+	| 'DATE_PARSE_ERROR'
+	| 'VALIDATION_ERROR'
 	| 'MISSING_REQUIRED_COLUMN'
 	| 'MISSING_MATCH_KEY'
 	| 'EMPTY_MAPPED_ROW'
@@ -138,12 +147,13 @@ export type MatchErrorCode =
 export interface RowFailureRecord {
 	rowIndex: number;
 	itemIndex: number;
-	stage: 'source_parse' | 'schema_match' | 'db_write';
+	stage: 'schema_match' | 'validation' | 'db_write';
 	errorCode: MatchErrorCode;
 	error: string;
 	operation?: WriteOperation;
 	table?: string;
 	dialect?: string;
+	column?: string;
 	sourceRow?: unknown;
 	mappedRow?: Record<string, unknown>;
 	sql?: string;
@@ -167,7 +177,6 @@ export interface WriteRowOutcome {
 
 export interface ExecutionSummary {
 	operation: WriteOperation;
-	dataSource: DataSourceType;
 	table: string;
 	dialect: SupportedDialect;
 	dryRun: boolean;
