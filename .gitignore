@@ -1,0 +1,7 @@
+node_modules
+dist
+.tmp-scan-*
+nodes/vendor/*.cjs
+nodes/vendor/*.cjs.map
+*.tgz
+.DS_Store
