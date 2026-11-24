@@ -56,7 +56,7 @@
 	},
 	"scripts": {
 		"bundle:foxschema": "node scripts/bundle-foxschema.mjs",
-		"build": "pnpm run bundle:foxschema && tsc && node scripts/copy-assets.mjs",
+		"build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && pnpm run bundle:foxschema && tsc && node scripts/copy-assets.mjs",
 		"dev": "tsc --watch",
 		"test": "tsc --noEmit && node --import tsx --test test/*.test.ts",
 		"validate:n8n": "node scripts/validate-n8n-package.mjs",
