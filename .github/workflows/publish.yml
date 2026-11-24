@@ -1,7 +1,9 @@
 name: Publish to npm
 
-# Publishes n8n-nodes-fox-schema-match to npmjs.com using npm Trusted
-# Publishing (OIDC) with provenance (required by n8n Creator Portal).
+# Publishes n8n-nodes-fox-schema-match to npmjs.com with provenance
+# (required by n8n Creator Portal). Supports:
+#   1. NPM_TOKEN repository secret (including stage-only tokens -> `npm stage publish`)
+#   2. npm Trusted Publishing (OIDC) once configured on npmjs.com
 
 on:
   release:
@@ -39,7 +41,7 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
+      - name: Upgrade npm (OIDC & staged publishing need latest npm)
         run: npm install -g npm@latest
 
       - name: Install dependencies
@@ -69,4 +71,22 @@ jobs:
 
       - name: Publish to npm
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-        run: npm publish --provenance --access public
+        env:
+          NPM_TOKEN_SECRET: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN_SECRET" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN_SECRET"
+          fi
+          set +e
+          npm publish --provenance --access public > /tmp/npm-pub.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/npm-pub.log
+          if [ "$rc" -ne 0 ]; then
+            if grep -q "E_STAGE_REQUIRED" /tmp/npm-pub.log; then
+              echo "Token requires staged publishing; running npm stage publish..."
+              npm stage publish --provenance --access public
+            else
+              exit "$rc"
+            fi
+          fi
