@@ -6,6 +6,28 @@ Ingest data from **Execute Raw Query**, **JSON / NDJSON**, **CSV**, or **Text** 
 
 ---
 
+## Screenshots & Video Demo
+
+- **End-to-end Playwright video walkthrough (live n8n + PostgreSQL):** [screenshots/fox-schema-match-demo.webm](https://github.com/tedious-code/n8n-nodes-fox-schema-match/raw/main/screenshots/fox-schema-match-demo.webm)
+- **Sample workflow:** [examples/sample-workflow-pipe-match.json](examples/sample-workflow-pipe-match.json)
+
+### Canvas Execution (Matched + Error Handler Branches)
+![Canvas Execution](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/canvas-executed.png)
+
+### Node Configuration & Matched Output
+![Node Configuration and Matched Output](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-matched-output.png)
+
+### Data Sources (CSV, Execute Raw Query, JSON, Text)
+![Data Source Options](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/data-source-options.png)
+
+### Error Handler Output (Row-Level Isolation: Type Coercion + DB Constraint)
+![Error Handler Output](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-error-handler.png)
+
+### Schema Match & Error Handler Parameters
+![Schema Match and Error Handler Parameters](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-schema-match-params.png)
+
+---
+
 ## Supported Dialects
 
 PostgreSQL, CockroachDB, YugabyteDB, Amazon Redshift, MySQL, MariaDB, TiDB, SQL Server, Azure SQL, Oracle, SQLite, DuckDB, ClickHouse.
@@ -19,7 +41,7 @@ Drivers stay external so package installation succeeds without native build tool
 ## Features
 
 ### 1. Data Sources
-- **Execute Raw Query**: Run parameterized SQL (`?` placeholders rewritten per dialect) against the target DB credential or an inline cross-dialect source connection.
+- **Execute Raw Query**: Run parameterized SQL (`?` placeholders rewritten per dialect) against the target DB credential or an inline cross-dialect source connection, with optional `rawQueryDataPath` extraction.
 - **JSON**: Read incoming workflow `$json` items, JSON / NDJSON strings or expressions, or binary `.json` / `.ndjson` files with optional dot/bracket `jsonRootPath`.
 - **CSV**: RFC-4180 parser with custom delimiters (`,`, `;`, `\t`, `|`, custom), quoted fields, multiline values, BOM stripping, headerless custom columns, and binary file support.
 - **Text**: Pipe-delimited (`|`), TSV (`\t`), custom delimiters, `key=value` pairs, regex named/numbered capture groups, fixed-width column specs (`col:start-end` or `col:width`), and raw lines.
@@ -54,3 +76,7 @@ pnpm test
 pnpm validate:n8n
 pnpm scan:n8n
 ```
+
+## Trusted Publishing (OIDC)
+
+`.github/workflows/publish.yml` publishes via npm OIDC Trusted Publishing (`id-token: write`, `environment: npm-publish`, `npm publish --provenance --access public`) on GitHub Releases or manual workflow dispatch.
