@@ -3,6 +3,7 @@ import {
 	type IDataObject,
 	type IExecuteFunctions,
 	type INodeExecutionData,
+	type ResourceMapperValue,
 } from 'n8n-workflow';
 import {
 	loadTableSchemas,
@@ -71,6 +72,32 @@ function parseCommaList(raw: unknown): string[] {
 		.split(',')
 		.map((v) => v.trim())
 		.filter(Boolean);
+}
+
+function resolveMapperTemplateValue(
+	rawValue: unknown,
+	rowData: Record<string, unknown>,
+): unknown {
+	if (typeof rawValue !== 'string') return rawValue;
+	const exactMatch = rawValue.match(/^\s*(?:\{\{\s*)?\$row\.([A-Za-z0-9_.-]+)(?:\s*\}\})?\s*$/);
+	if (exactMatch) {
+		const pathParts = exactMatch[1].split('.');
+		let cur: any = rowData;
+		for (const p of pathParts) {
+			if (cur === undefined || cur === null) return undefined;
+			cur = cur[p];
+		}
+		return cur;
+	}
+	return rawValue.replace(/\{\{\s*\$row\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_m, keyPath: string) => {
+		const pathParts = keyPath.split('.');
+		let cur: any = rowData;
+		for (const p of pathParts) {
+			if (cur === undefined || cur === null) return '';
+			cur = cur[p];
+		}
+		return cur === undefined || cur === null ? '' : String(cur);
+	});
 }
 
 async function readBinaryUtf8(
@@ -484,29 +511,93 @@ export async function runFoxSchemaMatch(
 		ctx.getNodeParameter('positionalColumns', 0, ''),
 	);
 
+	const resourceMapperParam =
+		mappingMode === 'resourceMapper'
+			? (ctx.getNodeParameter('columns', 0, {}) as Partial<ResourceMapperValue>)
+			: undefined;
+
 	const selectedMatchKeys = parseCommaList(
 		ctx.getNodeParameter('matchKeySelect', 0, []),
 	);
 	const customMatchKeys = parseCommaList(
 		ctx.getNodeParameter('matchKeyColumns', 0, ''),
 	);
+	const resourceMatchKeys = Array.isArray(resourceMapperParam?.matchingColumns)
+		? resourceMapperParam.matchingColumns.map((k) => String(k).trim()).filter(Boolean)
+		: [];
+
 	const effectiveMatchKeys = resolveEffectiveMatchKeys({
-		configuredKeys: customMatchKeys.length > 0 ? customMatchKeys : selectedMatchKeys,
+		configuredKeys:
+			mappingMode === 'resourceMapper'
+				? resourceMatchKeys
+				: customMatchKeys.length > 0
+					? customMatchKeys
+					: selectedMatchKeys,
 		tableMeta,
 		matchRule,
 	});
+
+	// Build effective rows for resourceMapper defineBelow vs autoMapInputData
+	let rowsForMatching: ParsedSourceRow[] = parsedRows;
+	let effectiveEngineMappingMode: 'auto' | 'manual' | 'positional' =
+		mappingMode === 'resourceMapper' ? 'auto' : mappingMode;
+	let effectiveIncludeIdentityOnInsert = options.includeIdentityOnInsert === true;
+
+	if (mappingMode === 'resourceMapper') {
+		const rmMode = resourceMapperParam?.mappingMode || 'defineBelow';
+		if (rmMode === 'defineBelow') {
+			effectiveEngineMappingMode = 'auto';
+			// Explicit columns defined in Visual Table Mapper should be included even if identity
+			effectiveIncludeIdentityOnInsert = true;
+
+			if (dataSource === 'json' && jsonInputMode === 'incomingItems') {
+				rowsForMatching = [];
+				for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+					const itemMapper = ctx.getNodeParameter(
+						'columns',
+						itemIndex,
+						{},
+					) as Partial<ResourceMapperValue>;
+					const definedObj = (itemMapper?.value ?? {}) as Record<string, unknown>;
+					rowsForMatching.push({
+						rowIndex: itemIndex,
+						itemIndex,
+						data: definedObj,
+						positionalValues: Object.values(definedObj),
+					});
+				}
+			} else {
+				const templateObj = (resourceMapperParam?.value ?? {}) as Record<string, unknown>;
+				rowsForMatching = parsedRows.map((r) => {
+					const mappedData: Record<string, unknown> = {};
+					for (const [col, val] of Object.entries(templateObj)) {
+						mappedData[col] = resolveMapperTemplateValue(val, r.data);
+					}
+					return {
+						rowIndex: r.rowIndex,
+						itemIndex: r.itemIndex,
+						data: mappedData,
+						positionalValues: Object.values(mappedData),
+					};
+				});
+			}
+		} else {
+			// autoMapInputData
+			effectiveEngineMappingMode = 'auto';
+		}
+	}
 
 	// Match & coerce every parsed row
 	const mappedRows: MappedRowResult[] = [];
 	const matchedColumnSet = new Set<string>();
 
-	for (const row of parsedRows) {
+	for (const row of rowsForMatching) {
 		const res = matchSourceRow(row, {
 			operation,
 			table,
 			dialect: resolvedTarget.dialect,
 			tableMeta,
-			mappingMode,
+			mappingMode: effectiveEngineMappingMode,
 			matchRule,
 			unmatchedSourceBehavior,
 			manualMappings,
@@ -515,7 +606,7 @@ export async function runFoxSchemaMatch(
 			emptyStringAsNull: options.emptyStringAsNull !== false,
 			strictTypeValidation: errorOpts.strictTypeValidation !== false,
 			validateRequiredColumns: errorOpts.validateRequiredColumns !== false,
-			includeIdentityOnInsert: options.includeIdentityOnInsert === true,
+			includeIdentityOnInsert: effectiveIncludeIdentityOnInsert,
 			skipNullValuesOnUpdate: options.skipNullValuesOnUpdate === true,
 		});
 

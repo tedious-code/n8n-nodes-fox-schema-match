@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-fox-schema-match",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Fox Schema Pipe Match for n8n powered by FoxSchema (@foxschema/db + @foxschema/sql): ingest Raw SQL Queries, JSON, CSV, or Delimited/Structured Text, match & coerce fields to target database table columns, execute Insert / Update / Upsert across 13 SQL dialects, and handle row-level or batch errors cleanly.",
 	"keywords": [
 		"n8n-community-node-package",

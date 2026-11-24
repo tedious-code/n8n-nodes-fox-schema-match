@@ -384,3 +384,99 @@ test('Dry Run compiles SQL without mutating the database', async () => {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test('Visual Table Mapper (resourceMapper): getMappingColumns + defineBelow Insert + CSV $row template', async () => {
+	const { dir, targetDbPath } = setupTempDb();
+	try {
+		const node = new FoxSchemaMatch();
+
+		// 1. Verify getMappingColumns returns FoxSchema table columns
+		const loadCtx = {
+			getNodeParameter: (name: string) => {
+				if (name === 'tableId') return { mode: 'list', value: 'users' };
+				if (name === 'operation') return 'insert';
+				return undefined;
+			},
+			getCredentials: async () => ({ dialect: 'sqlite', database: targetDbPath }),
+			getNode: () => TEST_NODE,
+		} as any;
+
+		const mappedSchema = await node.methods.resourceMapping.getMappingColumns.call(loadCtx);
+		const fieldIds = mappedSchema.fields.map((f) => f.id);
+		assert.deepEqual(fieldIds, ['id', 'first_name', 'email', 'age', 'active']);
+		assert.equal(mappedSchema.fields.find((f) => f.id === 'id')?.defaultMatch, true);
+		assert.equal(mappedSchema.fields.find((f) => f.id === 'age')?.type, 'number');
+
+		// 2. Insert via Visual Table Mapper (defineBelow) with incoming JSON item
+		const insertCtx = createMockExecuteContext({
+			targetDbPath,
+			inputItems: [{ json: { ignored: true } }],
+			params: {
+				operation: 'insert',
+				tableId: { mode: 'list', value: 'users' },
+				dataSource: 'json',
+				jsonInputMode: 'incomingItems',
+				mappingMode: 'resourceMapper',
+				columns: {
+					mappingMode: 'defineBelow',
+					value: {
+						id: 50,
+						first_name: 'Mapped Alice',
+						email: 'mapped@example.com',
+						age: 29,
+						active: 1,
+					},
+					matchingColumns: ['id'],
+				},
+				errorHandlerMode: 'routeToErrorOutput',
+				outputMode: 'summaryWithRows',
+			},
+		});
+
+		const [matched1, errors1] = await node.execute.call(insertCtx);
+		assert.equal(errors1.length, 0);
+		assert.equal(matched1[0].json.insertedCount, 1);
+
+		// 3. Upsert via Visual Table Mapper (defineBelow) using $row.* templates from CSV
+		const csvMapperCtx = createMockExecuteContext({
+			targetDbPath,
+			params: {
+				operation: 'upsert',
+				tableId: { mode: 'list', value: 'users' },
+				dataSource: 'csv',
+				csvInputMode: 'textContent',
+				csvText: 'uid,fname,mail\n50,Mapped Alice v2,mapped@example.com\n51,Mapped Bob,mbob@example.com',
+				hasHeader: true,
+				mappingMode: 'resourceMapper',
+				columns: {
+					mappingMode: 'defineBelow',
+					value: {
+						id: '$row.uid',
+						first_name: '$row.fname',
+						email: '$row.mail',
+						age: 33,
+						active: 1,
+					},
+					matchingColumns: ['id'],
+				},
+				errorHandlerMode: 'routeToErrorOutput',
+				outputMode: 'summaryWithRows',
+			},
+		});
+
+		const [matched2, errors2] = await node.execute.call(csvMapperCtx);
+		assert.equal(errors2.length, 0);
+		assert.equal(matched2[0].json.upsertedCount, 2);
+
+		const db = new Database(targetDbPath, { readonly: true });
+		const rows = db.prepare('SELECT id, first_name, age FROM users WHERE id >= 50 ORDER BY id').all() as any[];
+		db.close();
+		assert.deepEqual(rows, [
+			{ id: 50, first_name: 'Mapped Alice v2', age: 33 },
+			{ id: 51, first_name: 'Mapped Bob', age: 33 },
+		]);
+	} finally {
+		await ConnectionFactory.closeAll();
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});

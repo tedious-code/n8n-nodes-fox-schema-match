@@ -1,8 +1,11 @@
 import {
 	NodeOperationError,
+	type FieldType,
 	type ILoadOptionsFunctions,
 	type INodeListSearchResult,
 	type INodePropertyOptions,
+	type ResourceMapperField,
+	type ResourceMapperFields,
 } from 'n8n-workflow';
 import { loadTableSchemas } from './dbConnection';
 import type { FoxTableSchema } from './foxSchema';
@@ -122,4 +125,74 @@ export async function getTargetColumns(
 			description: `${pk}${col.type} (${nullable})`,
 		};
 	});
+}
+
+function mapFoxTypeToFieldType(rawType: string): FieldType {
+	const t = String(rawType ?? '').toUpperCase();
+	if (/BOOL|BIT/.test(t)) return 'boolean';
+	if (/INT|DECIMAL|NUMERIC|FLOAT|DOUBLE|REAL|NUMBER|MONEY|SERIAL|DEC|FIXED/.test(t)) {
+		return 'number';
+	}
+	if (/DATE|TIME|TIMESTAMP|DATETIME/.test(t)) return 'dateTime';
+	if (/JSON|JSONB/.test(t)) return 'object';
+	return 'string';
+}
+
+export async function getMappingColumns(
+	this: ILoadOptionsFunctions,
+): Promise<ResourceMapperFields> {
+	const rawTable = resolveLocatorValue(this.getNodeParameter('tableId', false));
+	const tableName = rawTable.includes('.') ? rawTable.split('.').pop()! : rawTable;
+	if (!tableName) {
+		return { fields: [] };
+	}
+
+	const operation = String(this.getNodeParameter('operation', 'insert') ?? 'insert');
+
+	let objects: FoxTableSchema[];
+	try {
+		objects = await loadCachedTables.call(this);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new NodeOperationError(
+			this.getNode(),
+			`FoxSchema mapping columns lookup failed: ${message}`,
+		);
+	}
+
+	const obj = objects.find(
+		(o) =>
+			TABLE_LIKE.has(o.objectType) &&
+			o.name.toUpperCase() === tableName.toUpperCase(),
+	);
+	if (!obj) {
+		return { fields: [] };
+	}
+
+	const pkSet = new Set(
+		(obj.primaryKey?.columns ?? []).map((c) => c.toUpperCase()),
+	);
+
+	const fields: ResourceMapperField[] = (obj.columns ?? []).map((col) => {
+		const isPk = Boolean(col.primaryKey) || pkSet.has(col.name.toUpperCase());
+		const isAutoGenInsert = operation === 'insert' && Boolean(col.identity);
+		const isRequiredInsert =
+			operation === 'insert' &&
+			col.nullable === false &&
+			!col.identity &&
+			col.defaultValue === undefined;
+
+		return {
+			id: col.name,
+			displayName: col.name,
+			defaultMatch: isPk,
+			canBeUsedToMatch: true,
+			required: operation === 'insert' ? isRequiredInsert : isPk,
+			display: true,
+			type: mapFoxTypeToFieldType(col.type),
+			removed: isAutoGenInsert,
+		};
+	});
+
+	return { fields };
 }

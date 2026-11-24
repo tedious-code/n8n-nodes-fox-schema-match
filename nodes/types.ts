@@ -4,7 +4,7 @@ export type DataSourceType = 'rawQuery' | 'json' | 'csv' | 'text';
 
 export type WriteOperation = 'insert' | 'update' | 'upsert';
 
-export type MappingMode = 'auto' | 'manual' | 'positional';
+export type MappingMode = 'auto' | 'manual' | 'positional' | 'resourceMapper';
 
 export type MatchRule = 'exact' | 'caseInsensitive' | 'normalized';
 

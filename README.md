@@ -14,6 +14,9 @@ Ingest data from **Execute Raw Query**, **JSON / NDJSON**, **CSV**, or **Text** 
 ### Canvas Execution (Matched + Error Handler Branches)
 ![Canvas Execution](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/canvas-executed.png)
 
+### Visual Table Mapper (Mapped Database Insert / Update / Upsert)
+![Visual Table Mapper Insert](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/visual-table-mapper-insert.png)
+
 ### Node Configuration & Matched Output
 ![Node Configuration and Matched Output](https://raw.githubusercontent.com/tedious-code/n8n-nodes-fox-schema-match/main/screenshots/node-matched-output.png)
 
@@ -47,8 +50,9 @@ Drivers stay external so package installation succeeds without native build tool
 - **Text**: Pipe-delimited (`|`), TSV (`\t`), custom delimiters, `key=value` pairs, regex named/numbered capture groups, fixed-width column specs (`col:start-end` or `col:width`), and raw lines.
 
 ### 2. Pipe Match & Coercion
-- **FoxSchema Catalog Introspection**: Browse target tables and columns (`searchTargetTables`, `getTargetColumns`) and auto-detect primary/unique keys.
+- **FoxSchema Catalog Introspection**: Browse target tables and columns (`searchTargetTables`, `getTargetColumns`, `getMappingColumns`) and auto-detect primary/unique keys.
 - **Mapping Modes**:
+  - **Visual Table Mapper (Columns UI)**: Uses n8n's native `resourceMapper` to auto-populate every column of the selected table (`Map Each Column Manually` with drag-and-drop `$json` expressions or `$row.<field>` templates for CSV/Text/Raw Query, or `Map Automatically`).
   - **Auto-Match**: Exact, Case-Insensitive, or Normalized (`firstName` / `first-name` / `FIRST_NAME` → `first_name`), with optional per-column overrides and transforms.
   - **Manual Column Mapping**: Map source paths (`user.email`) to target columns with defaults and transforms (`trim`, `lowercase`, `uppercase`, `toNumber`, `toBoolean`, `toIsoDate`, `jsonStringify`, `nullIfEmpty`).
   - **Positional**: Map ordered fields by column index.

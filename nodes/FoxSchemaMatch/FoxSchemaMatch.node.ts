@@ -15,7 +15,11 @@ import {
 } from 'n8n-workflow';
 import { testDbConnection } from '../dbConnection';
 import { runFoxSchemaMatch } from '../matchPipeline';
-import { getTargetColumns, searchTargetTables } from '../schemaCache';
+import {
+	getMappingColumns,
+	getTargetColumns,
+	searchTargetTables,
+} from '../schemaCache';
 
 export function configuredOutputs(
 	parameters: INodeParameters,
@@ -807,8 +811,107 @@ export class FoxSchemaMatch implements INodeType {
 						value: 'positional',
 						description: 'Map source values by column position to target columns in order',
 					},
+					{
+						name: 'Visual Table Mapper (Columns UI)',
+						value: 'resourceMapper',
+						description:
+							'Show every database table column automatically (Map Each Column Manually or Map Automatically)',
+					},
 				],
 				default: 'auto',
+			},
+			{
+				displayName: 'Columns',
+				name: 'columns',
+				type: 'resourceMapper',
+				noDataExpression: true,
+				default: {
+					mappingMode: 'defineBelow',
+					value: null,
+				},
+				required: true,
+				displayOptions: {
+					show: {
+						mappingMode: ['resourceMapper'],
+						operation: ['insert'],
+					},
+				},
+				typeOptions: {
+					loadOptionsDependsOn: ['tableId.value', 'operation'],
+					resourceMapper: {
+						resourceMapperMethod: 'getMappingColumns',
+						mode: 'add',
+						fieldWords: {
+							singular: 'column',
+							plural: 'columns',
+						},
+						addAllFields: true,
+						multiKeyMatch: true,
+						supportAutoMap: true,
+					},
+				},
+			},
+			{
+				displayName: 'Columns',
+				name: 'columns',
+				type: 'resourceMapper',
+				noDataExpression: true,
+				default: {
+					mappingMode: 'defineBelow',
+					value: null,
+				},
+				required: true,
+				displayOptions: {
+					show: {
+						mappingMode: ['resourceMapper'],
+						operation: ['update'],
+					},
+				},
+				typeOptions: {
+					loadOptionsDependsOn: ['tableId.value', 'operation'],
+					resourceMapper: {
+						resourceMapperMethod: 'getMappingColumns',
+						mode: 'update',
+						fieldWords: {
+							singular: 'column',
+							plural: 'columns',
+						},
+						addAllFields: true,
+						multiKeyMatch: true,
+						supportAutoMap: true,
+					},
+				},
+			},
+			{
+				displayName: 'Columns',
+				name: 'columns',
+				type: 'resourceMapper',
+				noDataExpression: true,
+				default: {
+					mappingMode: 'defineBelow',
+					value: null,
+				},
+				required: true,
+				displayOptions: {
+					show: {
+						mappingMode: ['resourceMapper'],
+						operation: ['upsert'],
+					},
+				},
+				typeOptions: {
+					loadOptionsDependsOn: ['tableId.value', 'operation'],
+					resourceMapper: {
+						resourceMapperMethod: 'getMappingColumns',
+						mode: 'upsert',
+						fieldWords: {
+							singular: 'column',
+							plural: 'columns',
+						},
+						addAllFields: true,
+						multiKeyMatch: true,
+						supportAutoMap: true,
+					},
+				},
 			},
 			{
 				displayName: 'Match Rule',
@@ -816,7 +919,7 @@ export class FoxSchemaMatch implements INodeType {
 				type: 'options',
 				displayOptions: {
 					show: {
-						mappingMode: ['auto'],
+						mappingMode: ['auto', 'resourceMapper'],
 					},
 				},
 				options: [
@@ -969,6 +1072,7 @@ export class FoxSchemaMatch implements INodeType {
 				displayOptions: {
 					show: {
 						operation: ['update', 'upsert'],
+						mappingMode: ['auto', 'manual', 'positional'],
 					},
 				},
 				description:
@@ -983,6 +1087,7 @@ export class FoxSchemaMatch implements INodeType {
 				displayOptions: {
 					show: {
 						operation: ['update', 'upsert'],
+						mappingMode: ['auto', 'manual', 'positional'],
 					},
 				},
 				description:
@@ -1240,6 +1345,9 @@ export class FoxSchemaMatch implements INodeType {
 		},
 		loadOptions: {
 			getTargetColumns,
+		},
+		resourceMapping: {
+			getMappingColumns,
 		},
 	};
 
